@@ -1,0 +1,287 @@
+[{
+  "_id": {
+    "$oid": "68188be7abf968b10da11a34"
+  },
+  "wordLists": {
+    "underwater": {
+      "1": [
+        {
+          "word": "SEA",
+          "image": "/images/sea.jpg"
+        },
+        {
+          "word": "NET",
+          "image": "/images/net.jpg"
+        },
+        {
+          "word": "ICE",
+          "image": "/images/ice.jpg"
+        },
+        {
+          "word": "EEL",
+          "image": "/images/eel.jpg"
+        }
+      ],
+      "2": [
+        {
+          "word": "FISH",
+          "image": "/images/fish.jpg"
+        },
+        {
+          "word": "SAND",
+          "image": "/images/sand.jpg"
+        },
+        {
+          "word": "WAVE",
+          "image": "/images/wave.jpg"
+        },
+        {
+          "word": "SHIP",
+          "image": "/images/ship.jpg"
+        }
+      ],
+      "3": [
+        {
+          "word": "WHALE",
+          "image": "/images/whale.jpg"
+        },
+        {
+          "word": "SHARK",
+          "image": "/images/shark.jpg"
+        },
+        {
+          "word": "SHELL",
+          "image": "/images/shell.jpg"
+        },
+        {
+          "word": "OCEAN",
+          "image": "/images/ocean.jpg"
+        }
+      ]
+    },
+    "space": {
+      "1": [
+        {
+          "word": "SUN",
+          "image": "/images/sun.jpg"
+        },
+        {
+          "word": "UFO",
+          "image": "/images/ufo.jpg"
+        },
+        {
+          "word": "SKY",
+          "image": "/images/sky.jpg"
+        },
+        {
+          "word": "GAS",
+          "image": "/images/gas.jpg"
+        }
+      ],
+      "2": [
+        {
+          "word": "MOON",
+          "image": "/images/moon.jpg"
+        },
+        {
+          "word": "MARS",
+          "image": "/images/mars.jpg"
+        },
+        {
+          "word": "STAR",
+          "image": "/images/star.jpg"
+        },
+        {
+          "word": "ROCK",
+          "image": "/images/rock.jpg"
+        }
+      ],
+      "3": [
+        {
+          "word": "VENUS",
+          "image": "/images/venus.jpg"
+        },
+        {
+          "word": "EARTH",
+          "image": "/images/earth.jpg"
+        },
+        {
+          "word": "SPACE",
+          "image": "/images/space1.jpg"
+        },
+        {
+          "word": "COMET",
+          "image": "/images/comet.jpg"
+        }
+      ]
+    },
+    "forest": {
+      "1": [
+        {
+          "word": "LOG",
+          "image": "/images/log.jpg"
+        },
+        {
+          "word": "MUD",
+          "image": "/images/mud.jpg"
+        },
+        {
+          "word": "BUG",
+          "image": "/images/bug.jpg"
+        },
+        {
+          "word": "ANT",
+          "image": "/images/ant.jpg"
+        }
+      ],
+      "2": [
+        {
+          "word": "TREE",
+          "image": "/images/tree.jpg"
+        },
+        {
+          "word": "LEAF",
+          "image": "/images/leaf.jpg"
+        },
+        {
+          "word": "RAIN",
+          "image": "/images/rain.jpg"
+        },
+        {
+          "word": "BIRD",
+          "image": "/images/bird.jpg"
+        }
+      ],
+      "3": [
+        {
+          "word": "PLANT",
+          "image": "/images/plant.jpg"
+        },
+        {
+          "word": "BERRY",
+          "image": "/images/berry.jpg"
+        },
+        {
+          "word": "GRASS",
+          "image": "/images/grass.jpg"
+        },
+        {
+          "word": "FRUIT",
+          "image": "/images/fruit.jpg"
+        }
+      ]
+    },
+    "playground": {
+      "1": [
+        {
+          "word": "RUN",
+          "image": "/images/run.jpg"
+        },
+        {
+          "word": "HOP",
+          "image": "/images/hop.jpg"
+        },
+        {
+          "word": "TOY",
+          "image": "/images/toy.jpg"
+        },
+        {
+          "word": "TAG",
+          "image": "/images/tag.jpg"
+        }
+      ],
+      "2": [
+        {
+          "word": "BALL",
+          "image": "/images/ball.jpg"
+        },
+        {
+          "word": "PLAY",
+          "image": "/images/play.jpg"
+        },
+        {
+          "word": "RIDE",
+          "image": "/images/ride.jpg"
+        },
+        {
+          "word": "SAND",
+          "image": "/images/sand.jpg"
+        }
+      ],
+      "3": [
+        {
+          "word": "CLIMB",
+          "image": "/images/climb.jpg"
+        },
+        {
+          "word": "SLIDE",
+          "image": "/images/slide.jpg"
+        },
+        {
+          "word": "SWING",
+          "image": "/images/swing.jpg"
+        },
+        {
+          "word": "TRAIN",
+          "image": "/images/train.jpg"
+        }
+      ]
+    },
+    "kitchen": {
+      "1": [
+        {
+          "word": "PAN",
+          "image": "/images/pan.jpg"
+        },
+        {
+          "word": "CUP",
+          "image": "/images/cup.jpg"
+        },
+        {
+          "word": "EGG",
+          "image": "/images/egg.jpg"
+        },
+        {
+          "word": "POT",
+          "image": "/images/pot.jpg"
+        }
+      ],
+      "2": [
+        {
+          "word": "FORK",
+          "image": "/images/fork.jpg"
+        },
+        {
+          "word": "MILK",
+          "image": "/images/milk.jpg"
+        },
+        {
+          "word": "RICE",
+          "image": "/images/rice.jpg"
+        },
+        {
+          "word": "BOWL",
+          "image": "/images/bowl.jpg"
+        }
+      ],
+      "3": [
+        {
+          "word": "PLATE",
+          "image": "/images/plate.jpg"
+        },
+        {
+          "word": "KNIFE",
+          "image": "/images/knife.jpg"
+        },
+        {
+          "word": "SPOON",
+          "image": "/images/spoon.jpg"
+        },
+        {
+          "word": "MIXER",
+          "image": "/images/mixer.jpg"
+        }
+      ]
+    }
+  }
+}]

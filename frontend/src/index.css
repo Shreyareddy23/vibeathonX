@@ -1,0 +1,55 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import '@fontsource/comic-neue';
+
+html, body {
+  font-family: 'Comic Neue', cursive;
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  min-height: 100vh;
+}
+/* index.css or styles/Login.css */
+body {
+  font-family: 'Poppins', sans-serif;
+  background: #fff;
+}
+
+
+/* Full background image */
+.bg-cover-full {
+  background-image: url('/images/img2.jpeg'); /* Ensure correct image format */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  height: 100vh;
+  width: 100vw;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+
+/* Word Grid */
+.word-grid {
+  @apply grid gap-2;
+}
+
+/* Word Cell Styling */
+.word-cell {
+  @apply w-12 h-12 flex items-center justify-center text-2xl font-bold rounded-lg transition-all duration-200 cursor-pointer select-none;
+}
+
+/* Selected Word Cell */
+.word-cell.selected {
+  @apply bg-yellow-300;
+  animation: bounce 0.5s;
+}
+
+/* Bounce Animation */
+@keyframes bounce {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
