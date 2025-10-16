@@ -6,6 +6,7 @@ interface ChildData {
   username: string;
   assignedThemes: string[];
   therapistCode: string;
+  preferredGame?: string | null;
 }
 
 const Landing: React.FC = () => {
@@ -29,7 +30,7 @@ const Landing: React.FC = () => {
     }
   }, [navigate]);
 
-  const handlePlayGames = () => {
+  const handlePlayPuzzles = () => {
     if (childData?.assignedThemes?.length) {
       navigate(`/game/${childData.assignedThemes[0]}/1`, {
         state: { 
@@ -40,6 +41,23 @@ const Landing: React.FC = () => {
       });
     } else {
       setError('No games have been assigned to you yet. Please ask your therapist to assign some games.');
+    }
+  };
+
+  const handlePlayTyping = () => {
+    try {
+      console.log('Starting typing game — navigating to /typing-game');
+      navigate('/typing-game');
+      // small fallback in case SPA navigation fails in the environment
+      setTimeout(() => {
+        if (window.location.pathname !== '/typing-game') {
+          console.warn('SPA navigate did not change location — falling back to full redirect');
+          window.location.href = '/typing-game';
+        }
+      }, 200);
+    } catch (err) {
+      console.error('Navigate error, falling back to full redirect', err);
+      window.location.href = '/typing-game';
     }
   };
 
@@ -63,23 +81,46 @@ const Landing: React.FC = () => {
           <ErrorMessage>{error}</ErrorMessage>
         ) : (
           <>
-            <GameInfo>
-              You have {childData.assignedThemes.length} game theme{childData.assignedThemes.length !== 1 ? 's' : ''} to play!
-            </GameInfo>
-
-            <Instructions>
-              <InstructionTitle>🎮 How to Play 🎮</InstructionTitle>
-              <InstructionList>
-                <li>Look at the picture to find the word.</li>
-                <li>Tap letters in order to spell it!</li>
-                <li>Words can go across or up and down.</li>
-                <li>❌ Spelled it wrong? You can tap again to choose new letters!</li>
-              </InstructionList>
-            </Instructions>
-
-            <PlayButton onClick={handlePlayGames}>
-              Let's Play! <span role="img" aria-label="rocket">🚀</span>
-            </PlayButton>
+            {/* Show only the allowed game based on child's preferredGame */}
+            {childData.preferredGame === 'typing' ? (
+              <>
+                <GameInfo>Typing game selected for you by your therapist.</GameInfo>
+                <Instructions>
+                  <InstructionTitle>✍️ Typing Task</InstructionTitle>
+                  <InstructionList>
+                    <li>Type the word shown in the box as accurately as you can.</li>
+                    <li>There are 5 words to type.</li>
+                  </InstructionList>
+                </Instructions>
+                <PlayButton onClick={handlePlayTyping}>Start Typing Game</PlayButton>
+              </>
+            ) : childData.preferredGame === 'puzzles' ? (
+              <>
+                <GameInfo>
+                  You have {childData.assignedThemes.length} game theme{childData.assignedThemes.length !== 1 ? 's' : ''} to play!
+                </GameInfo>
+                <Instructions>
+                  <InstructionTitle>🎮 How to Play 🎮</InstructionTitle>
+                  <InstructionList>
+                    <li>Look at the picture to find the word.</li>
+                    <li>Tap letters in order to spell it!</li>
+                    <li>Words can go across or up and down.</li>
+                    <li>❌ Spelled it wrong? You can tap again to choose new letters!</li>
+                  </InstructionList>
+                </Instructions>
+                <PlayButton onClick={handlePlayPuzzles}>Let's Play! <span role="img" aria-label="rocket">🚀</span></PlayButton>
+              </>
+            ) : (
+              <>
+                <GameInfo>No specific game selected by your therapist.</GameInfo>
+                <Instructions>
+                  <InstructionTitle>Contact your therapist</InstructionTitle>
+                  <InstructionList>
+                    <li>Please ask your therapist to select which game you should play.</li>
+                  </InstructionList>
+                </Instructions>
+              </>
+            )}
           </>
         )}
 

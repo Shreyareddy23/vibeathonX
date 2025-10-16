@@ -9,6 +9,7 @@ import Landing from './components/Landing';
 import Home from './components/Home';
 import Game from './components/Game';
 import ThemeAssignment from './components/ThemeAssignment';
+import TypingGame from './components/TypingGame';
 import About from './components/About';
 import FAQ from './components/FAQ';
 import Feedback from './components/Feedback';
@@ -34,6 +35,7 @@ const App: React.FC = () => {
           
           {/* Game Route */}
           <Route path="/game/:theme/:level" element={<Game />} />
+          <Route path="/typing-game" element={<TypingGame />} />
           
           {/* Therapist Protected Routes */}
           <Route path="/dashboard" element={<TherapistDashboard />} />

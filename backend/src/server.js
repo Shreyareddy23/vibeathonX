@@ -71,11 +71,22 @@ const therapistSchema = new mongoose.Schema({
               emotionsDuring: [String],
             },
           ],
+              typingResults: [
+                {
+                  word: String,
+                  input: String,
+                  correct: Boolean,
+                  completedAt: { type: Date, default: Date.now }
+                }
+              ],
+              typingResultsMap: { type: Object, default: {} },
+              preferredGame: { type: String, default: null },
         },
       ],
       currentAssignedThemes: { type: [String], default: [] },
       assignedThemes: { type: [String], default: [] },
       playedPuzzles: { type: [String], default: [] },
+      preferredGame: { type: String, default: null },
     },
   ],
 });
@@ -302,6 +313,7 @@ app.post('/api/login', async (req, res) => {
           username: child.username,
           therapistCode: therapistWithChild.code,
           assignedThemes: child.currentAssignedThemes || [],
+          preferredGame: child.preferredGame || null,
           sessionId,
         });
       }
@@ -334,7 +346,8 @@ app.post('/api/add-child', async (req, res) => {
       username: childName,
       currentAssignedThemes: [],
       assignedThemes: [], // For backward compatibility
-      playedPuzzles: []   // For backward compatibility
+      playedPuzzles: [],  // For backward compatibility
+      preferredGame: null
     });
     await therapist.save();
 
@@ -342,6 +355,59 @@ app.post('/api/add-child', async (req, res) => {
   } catch (error) {
     console.error('Error adding child:', error);
     res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Set preferred game for a child
+app.post('/api/set-preferred-game', async (req, res) => {
+  try {
+    const { therapistCode, username, preferredGame } = req.body;
+    if (!therapistCode || !username) return res.status(400).json({ error: 'Missing fields' });
+
+    await Therapist.updateOne(
+      { code: therapistCode, 'children.username': username },
+      { $set: { 'children.$.preferredGame': preferredGame } }
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error setting preferred game:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Save typing results for a session
+app.post('/api/save-typing-results', async (req, res) => {
+  try {
+    const { therapistCode, username, sessionId, results } = req.body; // results = [{word,input,correct}]
+    if (!therapistCode || !username || !sessionId || !results) return res.status(400).json({ error: 'Missing fields' });
+
+    const therapist = await Therapist.findOne({ code: therapistCode, 'children.username': username, 'children.sessions.sessionId': sessionId });
+    if (!therapist) return res.status(404).json({ error: 'Not found' });
+
+    const childIndex = therapist.children.findIndex(c => c.username === username);
+    const sessionIndex = therapist.children[childIndex].sessions.findIndex(s => s.sessionId === sessionId);
+    if (sessionIndex === -1) return res.status(404).json({ error: 'Session not found' });
+
+    const session = therapist.children[childIndex].sessions[sessionIndex];
+
+    // Only allow saving typing results if session.preferredGame is 'typing'
+    if (session.preferredGame && session.preferredGame !== 'typing') {
+      return res.status(400).json({ error: 'Typing results not allowed for this session (preferred game mismatch)' });
+    }
+
+    // Append typing results to session.typingResults
+    session.typingResults = session.typingResults || [];
+    session.typingResultsMap = session.typingResultsMap || {};
+    results.forEach(r => {
+      session.typingResults.push({ word: r.word, input: r.input, correct: !!r.correct, completedAt: new Date() });
+      session.typingResultsMap[r.word] = r.input;
+    });
+
+    await therapist.save();
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error saving typing results:', error);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -386,7 +452,10 @@ app.post('/api/child-login', async (req, res) => {
       assignedThemes: [...(therapist.children[childIndex].currentAssignedThemes || therapist.children[childIndex].assignedThemes || [])],
       themesChanged: [],
       emotionsOfChild: [],
-      playedPuzzles: []
+      playedPuzzles: [],
+      typingResults: [],
+      typingResultsMap: {},
+      preferredGame: therapist.children[childIndex].preferredGame || null,
     });
 
     await therapist.save();
@@ -891,6 +960,42 @@ app.get('/api/wordlists', async (req, res) => {
   } catch (error) {
     console.error('Error fetching word lists:', error);
     res.status(500).json({ error: 'Failed to fetch word lists' });
+  }
+});
+
+// Migration endpoint: normalize therapist->children->sessions schema
+// WARNING: Run this once in a controlled environment. It will modify DB documents.
+app.post('/api/migrate-sessions', async (req, res) => {
+  try {
+    const therapists = await Therapist.find();
+    let updated = 0;
+    for (const t of therapists) {
+      let changed = false;
+      const newChildren = (t.children || []).map(child => {
+        const c = child.toObject ? child.toObject() : JSON.parse(JSON.stringify(child));
+        if (c.preferredGame === undefined) {
+          c.preferredGame = null;
+          changed = true;
+        }
+        c.sessions = (c.sessions || []).map(session => {
+          const s = session;
+          if (!s.typingResults) { s.typingResults = []; changed = true; }
+          if (!s.typingResultsMap) { s.typingResultsMap = {}; changed = true; }
+          if (s.preferredGame === undefined) { s.preferredGame = c.preferredGame || null; changed = true; }
+          return s;
+        });
+        return c;
+      });
+      if (changed) {
+        t.children = newChildren;
+        await t.save();
+        updated++;
+      }
+    }
+    res.json({ success: true, updated });
+  } catch (error) {
+    console.error('Migration error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 

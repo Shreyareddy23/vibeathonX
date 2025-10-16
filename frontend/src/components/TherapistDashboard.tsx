@@ -11,6 +11,9 @@ interface Session {
   themesChanged: string[];
   emotionsOfChild: string[];
   playedPuzzles: string[];
+  typingResults?: { word: string; input: string; correct?: boolean; completedAt?: string }[];
+  typingResultsMap?: Record<string, string>;
+  preferredGame?: string | null;
 }
 
 interface Child {
@@ -46,7 +49,12 @@ const TherapistDashboard: React.FC = () => {
   const [passwordChangeMessage, setPasswordChangeMessage] = useState('');
   const [deleteConfirmChild, setDeleteConfirmChild] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<'typing' | 'puzzles'>('typing');
+  const [childGameSelection, setChildGameSelection] = useState<Record<string, 'typing' | 'puzzles' | null>>({});
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showTypingModal, setShowTypingModal] = useState(false);
+  const [typingResultsLoading, setTypingResultsLoading] = useState(false);
+  const [typingResultsData, setTypingResultsData] = useState<Array<{ sessionId: string; date: string; typingResultsMap?: Record<string,string> }>>([]);
   const navigate = useNavigate();
 
   // Set background and get therapist data
@@ -83,6 +91,13 @@ const TherapistDashboard: React.FC = () => {
       const data = await response.json();
       if (response.ok) {
         setChildren(data.children || []);
+        // initialize per-child game selection from sessionStorage if present
+        const mapping: Record<string, 'typing' | 'puzzles' | null> = {};
+        (data.children || []).forEach((c: any) => {
+          const val = sessionStorage.getItem(`selectedGame_${c.username}`);
+          mapping[c.username] = val === 'puzzles' ? 'puzzles' : val === 'typing' ? 'typing' : null;
+        });
+        setChildGameSelection(mapping);
         setError(null);
       } else {
         setError(data.message || 'Failed to fetch therapist data');
@@ -182,6 +197,16 @@ const TherapistDashboard: React.FC = () => {
   const handleAssignThemes = (childUsername: string) => {
     sessionStorage.setItem('selectedChild', childUsername);
     sessionStorage.setItem('selectedChildTherapistCode', therapistCode);
+    // pass selected game for this child to theme assignment so that UI can adapt
+    const selectedForChild = childGameSelection[childUsername] || null;
+    if (selectedForChild) {
+      sessionStorage.setItem('selectedGame', selectedForChild);
+      sessionStorage.setItem('selectedGame_for', childUsername);
+    } else {
+      // if nothing selected, clear any previous child-specific selection
+      sessionStorage.removeItem('selectedGame');
+      sessionStorage.removeItem('selectedGame_for');
+    }
     navigate('/theme-assignment');
   };
 
@@ -269,6 +294,35 @@ const TherapistDashboard: React.FC = () => {
     setExpandedSessionId((prev) => (prev === sessionId ? null : sessionId));
   };
 
+  // Fetch typing results from local children state and show modal
+  const fetchTypingResults = async (childUsername: string) => {
+    setTypingResultsLoading(true);
+    try {
+      const child = children.find(c => c.username === childUsername);
+      if (!child) {
+        setTypingResultsData([]);
+        setShowTypingModal(true);
+        setTypingResultsLoading(false);
+        return;
+      }
+      const sessions = (child.sessions || []).map(s => ({
+        sessionId: s.sessionId,
+        date: s.date as string,
+        typingResultsMap: s.typingResultsMap || undefined,
+      }));
+      // Only include sessions that have typingResultsMap with keys
+      const filtered = sessions.filter(ss => ss.typingResultsMap && Object.keys(ss.typingResultsMap).length > 0);
+      setTypingResultsData(filtered);
+      setShowTypingModal(true);
+    } catch (err) {
+      console.error('Failed to fetch typing results', err);
+      setTypingResultsData([]);
+      setShowTypingModal(true);
+    } finally {
+      setTypingResultsLoading(false);
+    }
+  };
+
   // Filter children by search query
   const filteredChildren = children.filter((child) =>
     child.username.toLowerCase().includes(searchQuery.toLowerCase())
@@ -309,7 +363,25 @@ const TherapistDashboard: React.FC = () => {
   return (
     <Container>
       <Header>
-        <Title>THERAPIST DASHBOARD</Title>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <Title>THERAPIST DASHBOARD</Title>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <GameButton
+              active={selectedGame === 'typing'}
+              onClick={() => setSelectedGame('typing')}
+              aria-pressed={selectedGame === 'typing'}
+            >
+              Typing Game
+            </GameButton>
+            <GameButton
+              active={selectedGame === 'puzzles'}
+              onClick={() => setSelectedGame('puzzles')}
+              aria-pressed={selectedGame === 'puzzles'}
+            >
+              Puzzles Game
+            </GameButton>
+          </div>
+        </div>
         <HeaderActions>
           <ChangePasswordButton onClick={() => setShowChangePassword(true)}>
             Change Password
@@ -392,6 +464,65 @@ const TherapistDashboard: React.FC = () => {
                     <h3>{child.username}</h3>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <SessionsCount>{child.sessions?.length || 0} Sessions</SessionsCount>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <SmallGameButton
+                          active={childGameSelection[child.username] === 'typing'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const mapping = { ...childGameSelection, [child.username]: 'typing' } as Record<string, 'typing' | 'puzzles' | null>;
+                            setChildGameSelection(mapping);
+                            // don't persist yet; wait for Save
+                            sessionStorage.setItem(`selectedGame_${child.username}`, 'typing');
+                          }}
+                        >
+                          Typing
+                        </SmallGameButton>
+                        <SmallGameButton
+                          active={childGameSelection[child.username] === 'puzzles'}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const mapping = { ...childGameSelection, [child.username]: 'puzzles' } as Record<string, 'typing' | 'puzzles' | null>;
+                            setChildGameSelection(mapping);
+                            // don't persist yet; wait for Save
+                            sessionStorage.setItem(`selectedGame_${child.username}`, 'puzzles');
+                          }}
+                        >
+                          Puzzles
+                        </SmallGameButton>
+                      </div>
+                    </div>
+                    <RightControls>
+                      <SaveChoiceButton
+                        disabled={!childGameSelection[child.username]}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          const choice = childGameSelection[child.username];
+                          try {
+                            await fetch('http://localhost:5000/api/set-preferred-game', {
+                              method: 'POST', headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ therapistCode: therapistCode, username: child.username, preferredGame: choice })
+                            });
+                            // persist locally for child's login logic
+                            if (choice) {
+                              sessionStorage.setItem('selectedGame', choice);
+                              sessionStorage.setItem('selectedGame_for', child.username);
+                            }
+                            // redirect based on choice
+                            if (choice === 'typing') {
+                              navigate('/typing-game');
+                            } else if (choice === 'puzzles') {
+                              // go to theme assignment for puzzles
+                              sessionStorage.setItem('selectedChild', child.username);
+                              sessionStorage.setItem('selectedChildTherapistCode', therapistCode);
+                              navigate('/theme-assignment');
+                            }
+                          } catch (err) {
+                            console.error('Failed to save preferred game', err);
+                          }
+                        }}
+                      >
+                        Save
+                      </SaveChoiceButton>
                       <DeleteButton
                         onClick={(e) => {
                           e.stopPropagation();
@@ -402,7 +533,7 @@ const TherapistDashboard: React.FC = () => {
                       >
                         ×
                       </DeleteButton>
-                    </div>
+                    </RightControls>
                   </ChildCardHeader>
                   <ChildCardContent>
                     <p>Joined: {new Date(child.joinedAt).toLocaleDateString()}</p>
@@ -418,30 +549,50 @@ const TherapistDashboard: React.FC = () => {
                       </ThemesList>
                     </ThemesWrapper>
                   </ChildCardContent>
-                  <ActionButton
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleAssignThemes(child.username);
-                    }}
-                  >
-                    Assign Themes
-                  </ActionButton>
-                  <ActionButton
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate('/all-sessions-emotions', {
-                        state: {
-                          allSessions: child.sessions || [],
-                        },
-                      });
-                    }}
-                    style={{ marginTop: '10px' }}
-                  >
-                    View All Sessions Emotions
-                  </ActionButton>
+                  {/* Show action buttons only if this child's selected game is puzzles */}
+                  {childGameSelection[child.username] === 'puzzles' ? (
+                    <>
+                      <ActionButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleAssignThemes(child.username);
+                        }}
+                      >
+                        Assign Themes & Puzzles
+                      </ActionButton>
+                      <ActionButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          navigate('/all-sessions-emotions', {
+                            state: {
+                              allSessions: child.sessions || [],
+                            },
+                          });
+                        }}
+                        style={{ marginTop: '10px' }}
+                      >
+                        View All Sessions Emotions
+                      </ActionButton>
+                    </>
+                  ) : childGameSelection[child.username] === 'typing' ? (
+                    <>
+                      <ActionButton
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // Show typing results for typing-mode child
+                          fetchTypingResults(child.username);
+                        }}
+                        style={{ backgroundColor: '#6c757d' }}
+                      >
+                        Show Typing Results
+                      </ActionButton>
+                    </>
+                  ) : (
+                    <div style={{ color: '#777', padding: '8px 0' }}>Select "Puzzles" or "Typing" for this child to enable actions</div>
+                  )}
                 </ChildCard>
   
-                {selectedChild?.username === child.username && (
+                {selectedChild?.username === child.username && childGameSelection[child.username] === 'puzzles' && (
                   <SessionsContainer>
                     <SessionsContainerHeader>
                       <h4>Sessions History</h4>
@@ -599,11 +750,73 @@ const TherapistDashboard: React.FC = () => {
                                     </div>
                                   </SessionSection>
   
-                                  {session.playedPuzzles && session.playedPuzzles.length > 0 && (
-                                    <SessionSection>
-                                      <SectionTitle>Puzzles Played</SectionTitle>
-                                      <div>{session.playedPuzzles.length || 0}</div>
-                                    </SessionSection>
+                                    {selectedGame === 'puzzles' && (
+                                      <>
+                                        {session.playedPuzzles && session.playedPuzzles.length > 0 ? (
+                                          <SessionSection>
+                                            <SectionTitle>Puzzles Played</SectionTitle>
+                                            <div>{session.playedPuzzles.length || 0}</div>
+                                          </SessionSection>
+                                        ) : (
+                                          <SessionSection>
+                                            <SectionTitle>Puzzles Played</SectionTitle>
+                                            <div>No puzzles played in this session</div>
+                                          </SessionSection>
+                                        )}
+
+                                        {/* Example puzzles analysis: show emotions mapped to each puzzle result */}
+                                        <SessionSection>
+                                          <SectionTitle>Puzzle Analysis</SectionTitle>
+                                          {session.playedPuzzles && session.playedPuzzles.length > 0 ? (
+                                            <PuzzleAnalysisList>
+                                              {session.playedPuzzles.map((puzzle, idx) => (
+                                                <PuzzleAnalysisItem key={idx}>
+                                                  <strong>Puzzle:</strong> {puzzle}
+                                                  <span style={{ marginLeft: 8, color: '#666' }}>Emotion: {session.emotionsOfChild?.[idx] || 'unknown'}</span>
+                                                </PuzzleAnalysisItem>
+                                              ))}
+                                            </PuzzleAnalysisList>
+                                          ) : (
+                                            <div style={{ color: '#666' }}>No puzzle analysis available</div>
+                                          )}
+                                        </SessionSection>
+                                      </>
+                                    )}
+
+                                  {session.preferredGame === 'typing' && (
+                                    <>
+                                      <SessionSection>
+                                        <SectionTitle>Typing Results (Map)</SectionTitle>
+                                        {session.typingResultsMap && Object.keys(session.typingResultsMap).length > 0 ? (
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            {Object.entries(session.typingResultsMap).map(([orig, typed]) => (
+                                              <div key={orig} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                <div><strong>{orig}</strong></div>
+                                                <div style={{ color: '#666' }}>{typed}</div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <div style={{ color: '#666' }}>No typing map available</div>
+                                        )}
+                                      </SessionSection>
+
+                                      <SessionSection>
+                                        <SectionTitle>Typing Results (List)</SectionTitle>
+                                        {session.typingResults && session.typingResults.length > 0 ? (
+                                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                                            {session.typingResults.map((r, i) => (
+                                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                                <div>{r.word}</div>
+                                                <div style={{ color: r.correct ? 'green' : '#e74c3c' }}>{r.input}</div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <div style={{ color: '#666' }}>No typing results recorded</div>
+                                        )}
+                                      </SessionSection>
+                                    </>
                                   )}
                                 </SessionBody>
                               )}
@@ -647,6 +860,41 @@ const TherapistDashboard: React.FC = () => {
             </ConfirmationActions>
           </ConfirmationModal>
         </ConfirmationOverlay>
+      )}
+
+      {/* Typing Results Modal */}
+      {showTypingModal && (
+        <TypingModalOverlay>
+          <TypingModal>
+            <ModalCloseButton onClick={() => setShowTypingModal(false)}>×</ModalCloseButton>
+            <ModalTitle>Typing Results (Session wise)</ModalTitle>
+            {typingResultsLoading ? (
+              <div>Loading...</div>
+            ) : (
+              <div>
+                {typingResultsData.length === 0 ? (
+                  <div style={{ color: '#666' }}>No typing results available for this child.</div>
+                ) : (
+                  <TypingResultsList>
+                    {typingResultsData.map((s) => (
+                      <TypingSessionItem key={s.sessionId}>
+                        <SessionLabel>{formatSessionDate(s.date)}</SessionLabel>
+                        <KVList>
+                          {s.typingResultsMap && Object.keys(s.typingResultsMap).map((k) => (
+                            <KVRow key={k}>
+                              <KVKey>{k}</KVKey>
+                              <KVVal>{s.typingResultsMap ? s.typingResultsMap[k] : ''}</KVVal>
+                            </KVRow>
+                          ))}
+                        </KVList>
+                      </TypingSessionItem>
+                    ))}
+                  </TypingResultsList>
+                )}
+              </div>
+            )}
+          </TypingModal>
+        </TypingModalOverlay>
       )}
     </Container>
   );
@@ -786,37 +1034,26 @@ const EmptyState = styled.div`
 
 const ChildrenGrid = styled.div`
   display: grid; 
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 25px;
+  /* increase min card width so header controls can fit */
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: 30px;
+  align-items: start;
 `;
 
 const ChildCard = styled.div<{ isSelected?: boolean }>`
-  background-color: rgba(255, 255, 255, 0.95);
-  padding: 20px; 
-  border-radius: 12px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(250,252,255,0.98));
+  padding: 30px 30px 34px 30px;
+  border-radius: 18px;
+  box-shadow: ${props => props.isSelected ? '0 20px 48px rgba(51,72,200,0.12)' : '0 10px 28px rgba(18, 38, 63, 0.06)'};
   cursor: pointer;
-  transition: all 0.3s ease;
-  border-left: ${props => props.isSelected ? '5px solid #5a7af0' : '5px solid transparent'};
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  border: 1px solid rgba(34,41,47,0.04);
   position: relative;
-  overflow: hidden;
-  
+  min-height: 260px;
+
   &:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
-  }
-  
-  &:after {
-    content: "";
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 60px;
-    height: 60px;
-    background: ${props => props.isSelected ? '#5a7af0' : 'transparent'};
-    transition: all 0.3s ease;
-    clip-path: polygon(0 0, 100% 0, 100% 100%);
-    opacity: 0.1;
+    transform: translateY(-6px);
+    box-shadow: 0 18px 40px rgba(17, 24, 39, 0.08);
   }
 `;
 
@@ -824,23 +1061,40 @@ const ChildCardHeader = styled.div`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
-  
+  gap: 12px;
+  margin-bottom: 14px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(34,41,47,0.04);
+  /* leave space on the right for floating controls */
+  /* leave more space on the right for floating controls */
+  padding-right: 240px;
+
   h3 {
     margin: 0;
-    color: #2c3e50;
-    font-weight: 700;
+    color: #16202a;
+    font-weight: 800;
     font-size: 18px;
+    letter-spacing: -0.2px;
   }
 `;
 
+const RightControls = styled.div`
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+`;
+
 const SessionsCount = styled.span`
-  background-color: #e8f4fd;
-  color: #5a7af0;
-  padding: 4px 8px;
-  border-radius: 12px;
+  background-color: #edf4ff;
+  color: #2f5bd6;
+  padding: 6px 9px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  box-shadow: 0 2px 6px rgba(47,91,214,0.08);
 `;
 
 const DeleteButton = styled.button`
@@ -849,33 +1103,28 @@ const DeleteButton = styled.button`
   cursor: pointer;
   padding: 0;
   border-radius: 8px;
-  transition: all 0.3s ease;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
   color: white;
-  font-size: 20px;
-  width: 32px;
-  height: 32px;
+  font-size: 18px;
+  width: 34px;
+  height: 34px;
   display: flex;
   align-items: center;
   justify-content: center;
 
   &:hover {
-    background: linear-gradient(135deg, #ff5252, #d32f2f);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(238, 90, 82, 0.4);
-  }
-  
-  &:active {
-    transform: translateY(0);
+    box-shadow: 0 6px 18px rgba(238, 90, 82, 0.22);
   }
 `;
 
 const ChildCardContent = styled.div`
-  margin-bottom: 15px;
-  
+  margin: 12px 0 8px 0;
+
   p {
-    margin: 8px 0;
-    color: #666;
-    font-size: 14px;
+    margin: 6px 0;
+    color: #4b5563;
+    font-size: 13px;
   }
 `;
 
@@ -898,29 +1147,31 @@ const ThemesList = styled.div`
 `;
 
 const ThemeTag = styled.span<{ empty?: boolean }>`
-  background-color: ${props => props.empty ? '#f8f9fa' : '#e8f4fd'};
-  color: ${props => props.empty ? '#999' : '#5a7af0'};
-  padding: 4px 8px;
-  border-radius: 12px;
+  background-color: ${props => props.empty ? '#ffffff' : '#eef6ff'};
+  color: ${props => props.empty ? '#9aa2ad' : '#2f5bd6'};
+  padding: 6px 10px;
+  border-radius: 999px;
   font-size: 12px;
-  font-weight: 500;
-  border: ${props => props.empty ? '1px dashed #ccc' : 'none'};
+  font-weight: 700;
+  border: ${props => props.empty ? '1px dashed #e6edf6' : 'none'};
+  box-shadow: ${props => props.empty ? 'none' : '0 2px 6px rgba(47,91,214,0.06)'};
 `;
 
 const ActionButton = styled.button`
   width: 100%;
-  padding: 10px;
-  background-color: #5a7af0;
+  padding: 14px 18px;
+  background-color: #6b7280;
   color: white;
   border: none;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  
+  font-weight: 800;
+  font-size: 16px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+
   &:hover {
-    background-color: #4a67cc;
-    transform: translateY(-1px);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 22px rgba(2,6,23,0.08);
   }
 `;
 
@@ -1315,6 +1566,65 @@ const ChangePasswordButton = styled.button`
   }
 `;
 
+const GameButton = styled.button<{ active?: boolean }>`
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  background: ${props => props.active ? '#3348c8' : 'transparent'};
+  color: ${props => props.active ? 'white' : '#3348c8'};
+  box-shadow: ${props => props.active ? '0 6px 18px rgba(51,72,200,0.18)' : 'none'};
+  transition: all 0.15s ease;
+  &:hover { transform: translateY(-2px); }
+`;
+
+const PuzzleAnalysisList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+`;
+
+const PuzzleAnalysisItem = styled.div`
+  background: #fff;
+  border: 1px solid #eee;
+  padding: 10px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #333;
+  font-size: 14px;
+`;
+
+const SmallGameButton = styled.button<{ active?: boolean }>`
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: ${props => props.active ? 'none' : '1px solid rgba(74,103,204,0.12)'};
+  background: ${props => props.active ? '#3348c8' : 'transparent'};
+  color: ${props => props.active ? 'white' : '#3348c8'};
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 13px;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  &:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(51,72,200,0.08); }
+`;
+
+const SaveChoiceButton = styled.button`
+  margin-left: 8px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: linear-gradient(180deg,#28a745,#1f9a4a);
+  color: white;
+  border: none;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 8px 20px rgba(34,197,94,0.12);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  &:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 12px 28px rgba(34,197,94,0.14); }
+  &:disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+`;
+
 // Popup modal overlay for change password
 const ChangePasswordModalOverlay = styled.div`
   position: fixed;
@@ -1364,6 +1674,75 @@ const ModalCloseButton = styled.button`
   &:hover {
     color: #e74c3c;
   }
+`;
+
+// Typing Results Modal styles
+const TypingModalOverlay = styled.div`
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 4000;
+`;
+
+const TypingModal = styled.div`
+  background: #fff;
+  border-radius: 12px;
+  padding: 22px;
+  width: 640px;
+  max-width: 95vw;
+  max-height: 80vh;
+  overflow: auto;
+`;
+
+const ModalTitle = styled.h3`
+  margin: 0 0 12px 0;
+  color: #2c3e50;
+`;
+
+const TypingResultsList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+`;
+
+const TypingSessionItem = styled.div`
+  border: 1px solid #eef2f7;
+  padding: 12px;
+  border-radius: 8px;
+  background: #fbfdff;
+`;
+
+const SessionLabel = styled.div`
+  font-weight: 700;
+  color: #3348c8;
+  margin-bottom: 8px;
+`;
+
+const KVList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+`;
+
+const KVRow = styled.div`
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+`;
+
+const KVKey = styled.div`
+  font-weight: 700;
+  color: #2c3e50;
+`;
+
+const KVVal = styled.div`
+  color: #666;
+  text-align: right;
+  min-width: 120px;
 `;
 
 export default TherapistDashboard;
