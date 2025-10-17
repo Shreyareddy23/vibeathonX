@@ -55,6 +55,7 @@ const TherapistDashboard: React.FC = () => {
   const [showStoriesModal, setShowStoriesModal] = useState(false);
   const [showRecordingsModal, setShowRecordingsModal] = useState(false);
   const [stories, setStories] = useState<Array<{ _id: string; title: string; author?: string; story?: string; moral?: string }>>([]);
+  const [storySearch, setStorySearch] = useState('');
   const [recordings, setRecordings] = useState<Array<{ 
     sessionId: string; 
     date: string; 
@@ -1048,70 +1049,50 @@ const TherapistDashboard: React.FC = () => {
                 {stories.length === 0 ? (
                   <div style={{ color: '#666' }}>No stories found</div>
                 ) : (
-                  <div style={{ display: 'flex', gap: 18 }}>
-                    <div style={{ flex: 1, maxHeight: 420, overflow: 'auto' }}>
-                      <TypingResultsList>
-                        {stories.map(s => (
-                          <TypingSessionItem key={s._id} onClick={() => setPreviewStory(s)} style={{ cursor: 'pointer' }}>
+                  <div style={{ display: 'block' }}>
+                    <div style={{ maxHeight: 460, overflow: 'auto', border: '1px solid #eef2f7', borderRadius: 8, background: '#fff' }}>
+                      <div style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1, padding: '10px', borderBottom: '1px solid #eef2f7' }}>
+                        <Input
+                          type="text"
+                          value={storySearch}
+                          onChange={(e) => setStorySearch(e.target.value)}
+                          placeholder="Search stories by title or author..."
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 10 }}>
+                        {stories
+                          .filter(s => {
+                            const q = storySearch.trim().toLowerCase();
+                            if (!q) return true;
+                            return (
+                              (s.title || '').toLowerCase().includes(q) ||
+                              (s.author || '').toLowerCase().includes(q)
+                            );
+                          })
+                          .map(s => (
+                          <TypingSessionItem 
+                            key={s._id} 
+                            onClick={() => setPreviewStory(s)} 
+                            style={{ cursor: 'pointer', borderColor: previewStory?._id === s._id ? '#5a7af0' : '#eef2f7', background: previewStory?._id === s._id ? '#f5f9ff' : '#fbfdff', transition: 'background 0.2s, border-color 0.2s' }}
+                          >
                             <SessionLabel>
                               {s.title}
                               <small style={{ color: '#888', marginLeft: 8 }}>
                                 {s.author && s.author.toString().trim() && s.author.toString().trim().toLowerCase() !== 'unknown' ? `by ${s.author}` : ''}
                               </small>
                             </SessionLabel>
-                            <KVList style={{ marginTop: 8 }}>
-                              <div style={{ fontSize: '15px', color: '#333', marginBottom: 8 }}>
-                                <strong>Story:</strong>
-                                <div style={{ marginTop: 4, color: '#555' }}>
-                                  {s.story ? (s.story.length > 200 ? s.story.slice(0, 200) + '...' : s.story) : 'No story available'}
-                                </div>
-                              </div>
-                              <div style={{ fontSize: '15px', color: '#333' }}>
-                                <strong>Moral:</strong>
-                                <div style={{ marginTop: 4, color: '#555' }}>
-                                  {s.moral || 'No moral available'}
-                                </div>
-                              </div>
-                            </KVList>
-                            <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
-                              <Button onClick={(e) => { e.stopPropagation(); savePreferredStory((selectedChild && selectedChild.username) || '', s._id); }} disabled={!selectedChild}>Save for {selectedChild ? selectedChild.username : 'selected child'}</Button>
-                              <Button onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(s.story || ''); }}>Copy story</Button>
-                              <Button onClick={(e) => { e.stopPropagation(); setPreviewStory(s); }}>Preview</Button>
+                            <div style={{ fontSize: '13px', color: '#333', marginTop: 6 }}>
+                              <strong style={{ color: '#455a64' }}>Story:</strong>{' '}
+                              <span style={{ color: '#555' }}>{s.story ? (s.story.length > 160 ? s.story.slice(0, 160) + '…' : s.story) : 'No story available'}</span>
+                            </div>
+                            <div style={{ fontSize: '12px', color: '#666', marginTop: 6 }}>
+                              <strong style={{ color: '#455a64' }}>Moral:</strong>{' '}
+                              <span>{s.moral || 'No moral available'}</span>
                             </div>
                           </TypingSessionItem>
                         ))}
-                      </TypingResultsList>
-                    </div>
-
-                    <div style={{ flex: 1, maxHeight: 420, overflow: 'auto', padding: 12, borderLeft: '1px solid #eee', background: '#fafcff', borderRadius: 8 }}>
-                      {previewStory ? (
-                        <div>
-                          <h4 style={{ margin: '0 0 12px 0' }}>{previewStory.title}</h4>
-                          {previewStory.author && previewStory.author.toString().trim() && previewStory.author.toString().trim().toLowerCase() !== 'unknown' ? (
-                            <div style={{ color: '#888', marginBottom: 12 }}>by {previewStory.author}</div>
-                          ) : null}
-                          
-                          <div style={{ marginBottom: 20 }}>
-                            <h5 style={{ margin: '0 0 8px 0', color: '#444' }}>Story:</h5>
-                            {previewStory.story ? (
-                              <div style={{ lineHeight: 1.6, color: '#333' }}>{previewStory.story}</div>
-                            ) : (
-                              <div style={{ color: '#666' }}>No story available</div>
-                            )}
-                          </div>
-
-                          <div>
-                            <h5 style={{ margin: '0 0 8px 0', color: '#444' }}>Moral:</h5>
-                            {previewStory.moral ? (
-                              <div style={{ lineHeight: 1.6, color: '#333' }}>{previewStory.moral}</div>
-                            ) : (
-                              <div style={{ color: '#666' }}>No moral available</div>
-                            )}
-                          </div>
-                        </div>
-                      ) : (
-                        <div style={{ color: '#666' }}>Select a story to see its full content here</div>
-                      )}
+                      </div>
                     </div>
                   </div>
                 )}

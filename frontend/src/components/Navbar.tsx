@@ -20,6 +20,7 @@ const Navbar = () => {
 
           {/* Navigation Links - Desktop */}
           <div className="hidden md:flex items-center space-x-8">
+            <NavLink to="/phonetics-game">Phonetic Sounds</NavLink>
             <NavLink to="/">Home</NavLink>
             <NavLink to="/about">About Us</NavLink>
             <NavLink to="/faq">FAQ</NavLink>
@@ -44,6 +45,7 @@ const Navbar = () => {
       {/* Mobile Menu */}
       <div className="md:hidden">
         <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">
+          <MobileNavLink to="/phonetics-game">Phonetic Sounds</MobileNavLink>
           <MobileNavLink to="/">Home</MobileNavLink>
           <MobileNavLink to="/about">About Us</MobileNavLink>
           <MobileNavLink to="/faq">FAQ</MobileNavLink>

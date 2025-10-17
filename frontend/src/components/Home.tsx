@@ -39,6 +39,7 @@ const Home: React.FC = () => {
             </LogoStars>
           </LogoContainer>
           <MenuItems>
+            <MenuItem><StyledLink to="/phonetics-game">Phonetic Sounds</StyledLink></MenuItem>
             <MenuItem><StyledLink to="/">Home</StyledLink></MenuItem>
             <MenuItem><StyledLink to="/about">About</StyledLink></MenuItem>
             <MenuItem><StyledLink to="/faq">FAQ</StyledLink></MenuItem>

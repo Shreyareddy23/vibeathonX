@@ -11,6 +11,7 @@ import Game from './components/Game';
 import ThemeAssignment from './components/ThemeAssignment';
 import TypingGame from './components/TypingGame';
 import ReadingExercise from './components/ReadingExercise';
+import PhoneticsGame from './components/PhoneticsGame';
 import { ToastProvider } from './components/ToastContext';
 import About from './components/About';
 import FAQ from './components/FAQ';
@@ -40,6 +41,7 @@ const App: React.FC = () => {
           <Route path="/game/:theme/:level" element={<Game />} />
           <Route path="/typing-game" element={<TypingGame />} />
           <Route path="/reading-exercise" element={<ReadingExercise />} />
+          <Route path="/phonetics-game" element={<PhoneticsGame />} />
           
           {/* Therapist Protected Routes */}
           <Route path="/dashboard" element={<TherapistDashboard />} />
