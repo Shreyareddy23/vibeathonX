@@ -908,12 +908,11 @@ const adjustDifficulty = async () => {
     if (confirmQuit) {
       stopCamera();
       setShowConfetti(false);
-      setShowThemeComplete(true);
-      
       // Clear game state
       sessionStorage.removeItem('gameScore');
       sessionStorage.removeItem('playedCount');
       sessionStorage.removeItem('playedPuzzles');
+      navigate('/');
     }
   };
   const handleHomeClick = () => {

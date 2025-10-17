@@ -72,6 +72,21 @@ const TherapistDashboard: React.FC = () => {
   const [showTypingModal, setShowTypingModal] = useState(false);
   const [typingResultsLoading, setTypingResultsLoading] = useState(false);
   const [typingResultsData, setTypingResultsData] = useState<Array<{ sessionId: string; date: string; typingResultsMap?: Record<string,string> }>>([]);
+  const [typingAnalytics, setTypingAnalytics] = useState<{
+    username: string;
+    overallStats: { totalWords: number; correctWords: number; overallAccuracy: number };
+    sessionAnalyses: Array<{ sessionId: string; date: string | Date; analysis: {
+      problematicLetters?: string[];
+      confusionPatterns?: Array<{ confuses: string; with: string }>;
+      strengths?: string[];
+      overallAccuracy?: number;
+      severity?: string;
+      analyzedAt?: string | Date;
+      totalWords?: number;
+      correctWords?: number;
+    } }>;
+    hasData: boolean;
+  } | null>(null);
 
 
   const navigate = useNavigate();
@@ -375,29 +390,22 @@ const TherapistDashboard: React.FC = () => {
     setExpandedSessionId((prev) => (prev === sessionId ? null : sessionId));
   };
 
-  // Fetch typing results from local children state and show modal
+  // Fetch typing analytics (overall + per-session) from backend
   const fetchTypingResults = async (childUsername: string) => {
     setTypingResultsLoading(true);
+    setTypingAnalytics(null);
     try {
-      const child = children.find(c => c.username === childUsername);
-      if (!child) {
-        setTypingResultsData([]);
-        setShowTypingModal(true);
-        setTypingResultsLoading(false);
-        return;
+      const resp = await fetch(`http://localhost:5000/api/typing/child-analysis?therapistCode=${encodeURIComponent(therapistCode)}&username=${encodeURIComponent(childUsername)}`);
+      const data = await resp.json();
+      if (resp.ok && data.success) {
+        setTypingAnalytics(data);
+      } else {
+        setTypingAnalytics({ username: childUsername, overallStats: { totalWords: 0, correctWords: 0, overallAccuracy: 0 }, sessionAnalyses: [], hasData: false });
       }
-      const sessions = (child.sessions || []).map(s => ({
-        sessionId: s.sessionId,
-        date: s.date as string,
-        typingResultsMap: s.typingResultsMap || undefined,
-      }));
-      // Only include sessions that have typingResultsMap with keys
-      const filtered = sessions.filter(ss => ss.typingResultsMap && Object.keys(ss.typingResultsMap).length > 0);
-      setTypingResultsData(filtered);
       setShowTypingModal(true);
     } catch (err) {
-      console.error('Failed to fetch typing results', err);
-      setTypingResultsData([]);
+      console.error('Failed to fetch typing analytics', err);
+      setTypingAnalytics({ username: childUsername, overallStats: { totalWords: 0, correctWords: 0, overallAccuracy: 0 }, sessionAnalyses: [], hasData: false });
       setShowTypingModal(true);
     } finally {
       setTypingResultsLoading(false);
@@ -1253,30 +1261,99 @@ const TherapistDashboard: React.FC = () => {
         <TypingModalOverlay>
           <TypingModal>
             <ModalCloseButton onClick={() => setShowTypingModal(false)}>×</ModalCloseButton>
-            <ModalTitle>Typing Results (Session wise)</ModalTitle>
+            <ModalTitle>Typing Analysis</ModalTitle>
             {typingResultsLoading ? (
               <div>Loading...</div>
+            ) : !typingAnalytics || !typingAnalytics.hasData ? (
+              <div style={{ color: '#666' }}>No typing results available for this child.</div>
             ) : (
-              <div>
-                {typingResultsData.length === 0 ? (
-                  <div style={{ color: '#666' }}>No typing results available for this child.</div>
-                ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <InfoCardsRow>
+                  <InfoStatCard>
+                    <h4>Total Words</h4>
+                    <strong>{typingAnalytics.overallStats.totalWords}</strong>
+                  </InfoStatCard>
+                  <InfoStatCard>
+                    <h4>Correct Words</h4>
+                    <strong style={{ color: '#2e7d32' }}>{typingAnalytics.overallStats.correctWords}</strong>
+                  </InfoStatCard>
+                  <InfoStatCard>
+                    <h4>Accuracy</h4>
+                    <strong style={{ color: typingAnalytics.overallStats.overallAccuracy >= 80 ? '#2e7d32' : typingAnalytics.overallStats.overallAccuracy >= 60 ? '#f57c00' : '#c62828' }}>{typingAnalytics.overallStats.overallAccuracy}%</strong>
+                  </InfoStatCard>
+                </InfoCardsRow>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <InfoPanel>
+                    <h4>Problematic Letters</h4>
+                    {typingAnalytics.sessionAnalyses && typingAnalytics.sessionAnalyses.length > 0 ? (
+                      <TagList>
+                        {Array.from(new Set(typingAnalytics.sessionAnalyses.flatMap(s => s.analysis.problematicLetters || []))).slice(0, 12).map((l, i) => (
+                          <Tag key={i}>{l}</Tag>
+                        ))}
+                      </TagList>
+                    ) : (
+                      <EmptyMuted>No data</EmptyMuted>
+                    )}
+                  </InfoPanel>
+
+                  <InfoPanel>
+                    <h4>Strengths</h4>
+                    {typingAnalytics.sessionAnalyses && typingAnalytics.sessionAnalyses.length > 0 ? (
+                      <TagList>
+                        {Array.from(new Set(typingAnalytics.sessionAnalyses.flatMap(s => s.analysis.strengths || []))).slice(0, 12).map((l, i) => (
+                          <Tag key={i} style={{ background: '#e8f5e9', color: '#2e7d32' }}>{l}</Tag>
+                        ))}
+                      </TagList>
+                    ) : (
+                      <EmptyMuted>No data</EmptyMuted>
+                    )}
+                  </InfoPanel>
+                </div>
+
+                <InfoPanel>
+                  <h4>Common Confusions</h4>
+                  {typingAnalytics.sessionAnalyses && typingAnalytics.sessionAnalyses.length > 0 ? (
+                    <TagList>
+                      {Array.from(new Set(typingAnalytics.sessionAnalyses.flatMap(s => (s.analysis.confusionPatterns || []).map(p => `${p.confuses}↔${p.with}`)))).slice(0, 12).map((p, i) => (
+                        <Tag key={i} style={{ background: '#fff8e1', color: '#ef6c00' }}>{p}</Tag>
+                      ))}
+                    </TagList>
+                  ) : (
+                    <EmptyMuted>No data</EmptyMuted>
+                  )}
+                </InfoPanel>
+
+                {/* Recommendations removed per request */}
+
+                <div>
+                  <h4 style={{ marginBottom: 8 }}>Sessions</h4>
                   <TypingResultsList>
-                    {typingResultsData.map((s) => (
-                      <TypingSessionItem key={s.sessionId}>
-                        <SessionLabel>{formatSessionDate(s.date)}</SessionLabel>
+                    {typingAnalytics.sessionAnalyses.map(sa => (
+                      <TypingSessionItem key={sa.sessionId}>
+                        <SessionLabel>{formatSessionDate(sa.date)}</SessionLabel>
                         <KVList>
-                          {s.typingResultsMap && Object.keys(s.typingResultsMap).map((k) => (
-                            <KVRow key={k}>
-                              <KVKey>{k}</KVKey>
-                              <KVVal>{s.typingResultsMap ? s.typingResultsMap[k] : ''}</KVVal>
-                            </KVRow>
-                          ))}
+                          <KVRow>
+                            <KVKey>Accuracy</KVKey>
+                            <KVVal>{(sa.analysis.overallAccuracy ?? 0)}%</KVVal>
+                          </KVRow>
+                          <KVRow>
+                            <KVKey>Severity</KVKey>
+                            <KVVal>{sa.analysis.severity || 'mild'}</KVVal>
+                          </KVRow>
                         </KVList>
+                        {(sa.analysis.problematicLetters && sa.analysis.problematicLetters.length > 0) && (
+                          <div style={{ marginTop: 8 }}>
+                            <small style={{ color: '#666' }}>Problem letters:</small>
+                            <TagList>
+                              {sa.analysis.problematicLetters.slice(0, 10).map((l, i) => <Tag key={i}>{l}</Tag>)}
+                            </TagList>
+                          </div>
+                        )}
                       </TypingSessionItem>
                     ))}
                   </TypingResultsList>
-                )}
+                </div>
               </div>
             )}
           </TypingModal>
@@ -2081,6 +2158,49 @@ const TypingModal = styled.div`
   max-width: 95vw;
   max-height: 80vh;
   overflow: auto;
+`;
+
+const InfoCardsRow = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+`;
+
+const InfoStatCard = styled.div`
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 12px;
+  h4 { margin: 0 0 6px 0; color: #455a64; font-size: 13px; font-weight: 700; }
+  strong { font-size: 20px; color: #2c3e50; }
+`;
+
+const InfoPanel = styled.div`
+  background: #ffffff;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+  padding: 12px;
+  h4 { margin: 0 0 8px 0; color: #2c3e50; font-size: 14px; font-weight: 800; }
+`;
+
+const TagList = styled.div`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const Tag = styled.span`
+  background: #e3f2fd;
+  color: #1565c0;
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 12px;
+  font-weight: 700;
+`;
+
+const EmptyMuted = styled.div`
+  color: #90a4ae;
+  font-size: 13px;
 `;
 
 const ModalTitle = styled.h3`

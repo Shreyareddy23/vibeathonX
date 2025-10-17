@@ -391,22 +391,131 @@ app.post('/api/set-preferred-game', async (req, res) => {
 });
 
 
-// ==================== GEMINI-POWERED TYPING GAME ENDPOINTS ====================
-// Place this section AFTER the generateSessionId() function (around line 138)
-// and BEFORE the app.post('/api/save-typing-results') endpoint
+// ==================== LOCAL DICTIONARY TYPING GAME ENDPOINTS ====================
+// Word bank focusing on letters d, b, p, e, i, l (3-5 letters, kid-friendly)
+const TYPING_WORDS = [
+  'bed','bad','pad','lad','lid','did','bid','dip','lip','pill','bill','dill','bell','dell',
+  'peel','deep','beep','peep','pipe','pale','bale','bail','pail','bail','peel','peel','bell',
+  'peel','peal','leap','peep','peel','peep','piped','deli','idle','idle','bide','pile','pile',
+  'piled','biped','pedal','pedal','led','deal','peal','bale','bald','bald','bide','lide','bled',
+  'bleed','peel','peel','piped','bead','bead','bead','bead','lied','lied','bile','pile','pile',
+  'peal','deal','bell','belle','peel','pearl','pall','ball','bell','dell','pelt','belt','bent',
+  'bell','fell','tell','dill','pill','bill','bill','peel','beep','deep','peep','peep','peel'
+].filter((v, i, a) => a.indexOf(v) === i); // dedupe
 
-// Import Gemini AI at the top of your file (around line 7)
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-// Initialize Gemini AI (place after other initializations, around line 15)
-const genAI = new GoogleGenerativeAI("AIzaSyBqyTaqtqroFrAWYmc8txnZX3fFyoYh-14");
-
-// Helper function to get Gemini model
-function getGeminiModel() {
-  return genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+function pickRandom(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ========== NEW TYPING ENDPOINTS - ADD THESE ==========
+function getProblemLetterScores(typingHistory) {
+  const letterScores = {}; // targetLetter -> errors count
+  typingHistory.forEach(item => {
+    const target = String(item.word || '').toLowerCase();
+    const typed = String(item.input || '').toLowerCase();
+    if (item.correct) return;
+    const maxLen = Math.max(target.length, typed.length);
+    for (let i = 0; i < maxLen; i++) {
+      const t = target[i] || '';
+      const u = typed[i] || '';
+      if (t !== u && t) {
+        letterScores[t] = (letterScores[t] || 0) + 1;
+      }
+    }
+  });
+  return letterScores;
+}
+
+function chooseNextWord(typingHistory, usedWords) {
+  const used = new Set((usedWords || []).map(w => String(w).toLowerCase()));
+  const scores = getProblemLetterScores(typingHistory || []);
+  const focusLetters = Object.keys(scores).sort((a,b) => (scores[b]||0)-(scores[a]||0));
+  const candidates = TYPING_WORDS.filter(w => !used.has(w));
+  if (candidates.length === 0) return pickRandom(TYPING_WORDS);
+  if (focusLetters.length === 0) return pickRandom(candidates);
+  // Prefer words containing highest scored letters
+  for (const letter of focusLetters) {
+    const subset = candidates.filter(w => w.includes(letter));
+    if (subset.length) return pickRandom(subset);
+  }
+  return pickRandom(candidates);
+}
+
+function analyzeResultsLocally(results) {
+  const all = results || [];
+  const totalWords = all.length;
+  const correctWords = all.filter(r => !!r.correct).length;
+  const overallAccuracy = totalWords > 0 ? Math.round((correctWords / totalWords) * 100) : 0;
+
+  const letterErrorCounts = {};
+  const letterOkCounts = {};
+  const confusionMap = {}; // { target: { mistakenAs: count } }
+
+  all.forEach(item => {
+    const target = String(item.word || '').toLowerCase();
+    const typed = String(item.input || '').toLowerCase();
+    const maxLen = Math.max(target.length, typed.length);
+    for (let i = 0; i < maxLen; i++) {
+      const t = target[i] || '';
+      const u = typed[i] || '';
+      if (!t) continue;
+      if (t === u) {
+        letterOkCounts[t] = (letterOkCounts[t] || 0) + 1;
+      } else {
+        letterErrorCounts[t] = (letterErrorCounts[t] || 0) + 1;
+        if (u) {
+          confusionMap[t] = confusionMap[t] || {};
+          confusionMap[t][u] = (confusionMap[t][u] || 0) + 1;
+        }
+      }
+    }
+  });
+
+  const problematicLetters = Object.keys(letterErrorCounts)
+    .sort((a,b) => (letterErrorCounts[b]||0) - (letterErrorCounts[a]||0));
+
+  const strengths = Object.keys(letterOkCounts)
+    .filter(l => (letterOkCounts[l] || 0) >= (letterErrorCounts[l] || 0))
+    .sort((a,b) => (letterOkCounts[b]||0) - (letterOkCounts[a]||0));
+
+  const confusionPatterns = [];
+  Object.keys(confusionMap).forEach(target => {
+    const mistakenAs = Object.entries(confusionMap[target])
+      .sort((a,b) => b[1]-a[1])
+      .slice(0, 2);
+    mistakenAs.forEach(([withLetter]) => {
+      if (withLetter && withLetter !== target) {
+        confusionPatterns.push({ confuses: withLetter, with: target });
+      }
+    });
+  });
+
+  let severity = 'mild';
+  if (overallAccuracy < 60) severity = 'severe';
+  else if (overallAccuracy < 80) severity = 'moderate';
+
+  const recommendations = [];
+  if (problematicLetters.length > 0) {
+    recommendations.push(`Focus practice on letters: ${problematicLetters.slice(0, 5).join(', ')}`);
+  }
+  if (confusionPatterns.length > 0) {
+    const pairs = confusionPatterns.slice(0, 5).map(p => `${p.confuses}/${p.with}`).join(', ');
+    if (pairs) recommendations.push(`Target common confusions: ${pairs}`);
+  }
+  if (overallAccuracy < 90) {
+    recommendations.push('Use slower-paced typing with visual letter cues for reinforcement.');
+  }
+
+  return {
+    problematicLetters,
+    confusionPatterns,
+    strengths,
+    overallAccuracy,
+    recommendations,
+    severity
+  };
+}
+
+// ========== NEW TYPING ENDPOINTS (LOCAL) ==========
 
 // 1. Generate initial word for new typing session
 app.post('/api/typing/generate-initial-word', async (req, res) => {
@@ -417,26 +526,9 @@ app.post('/api/typing/generate-initial-word', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const model = getGeminiModel();
-    
-    const prompt = `You are helping a dyslexic child practice typing. Generate ONE simple word from common categories (fruits, animals, colors, objects) that is:
-- 3-5 letters long
-- Easy to spell
-- Commonly known by children
-- Suitable for dyslexic children (avoid confusing letter combinations like 'b/d', 'p/q')
-
-Return ONLY the word in lowercase, nothing else. No punctuation, no explanations.`;
-
-    const result = await model.generateContent(prompt);
-    const word = result.response.text().trim().toLowerCase().replace(/[^a-z]/g, '');
-
-    console.log('Generated initial word:', word);
-
-    res.json({ 
-      success: true, 
-      word: word,
-      isInitial: true 
-    });
+    const word = pickRandom(TYPING_WORDS);
+    console.log('Generated initial word (local):', word);
+    res.json({ success: true, word, isInitial: true });
   } catch (error) {
     console.error('Error generating initial word:', error);
     res.status(500).json({ error: 'Failed to generate word', details: error.message });
@@ -453,44 +545,10 @@ app.post('/api/typing/generate-next-word', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const model = getGeminiModel();
-    
-    // List of words already given
-    const usedWords = typingHistory.map(item => item.word.toLowerCase()).join(', ');
-
-    // Prepare typing history for analysis
-    const historyText = typingHistory.map(item => 
-      `Word: "${item.word}", Typed: "${item.input}", Correct: ${item.correct}`
-    ).join('\n');
-
-    const prompt = `You are an AI assistant helping a dyslexic child improve typing skills.
-
-TYPING HISTORY:
-${historyText}
-
-Avoid repeating any of these words: ${usedWords}
-
-Analyze the mistakes and identify which letters the child is struggling with (common dyslexic patterns: b/d, p/q, m/n, u/n, w/m, etc.).
-
-Based on this analysis, generate ONE new word that:
-1. Contains letters the child struggled with
-2. Is simple and age-appropriate
-3. Helps diagnose specific letter confusion patterns
-4. Has a maximum of 5 letters
-5. Is NOT one of the words already given
-
-Return ONLY the word in lowercase, nothing else. No punctuation, no explanations.`;
-
-    const result = await model.generateContent(prompt);
-    const word = result.response.text().trim().toLowerCase().replace(/[^a-z]/g, '');
-
-    console.log('Generated adaptive word:', word, 'based on history:', typingHistory.length, 'attempts');
-
-    res.json({ 
-      success: true, 
-      word: word,
-      isAdaptive: true 
-    });
+    const usedWords = typingHistory.map(item => String(item.word || '').toLowerCase());
+    const word = chooseNextWord(typingHistory, usedWords);
+    console.log('Generated adaptive word (local):', word, 'based on history:', typingHistory.length, 'attempts');
+    res.json({ success: true, word, isAdaptive: true });
   } catch (error) {
     console.error('Error generating next word:', error);
     res.status(500).json({ error: 'Failed to generate word', details: error.message });
@@ -524,46 +582,7 @@ app.post('/api/typing/analyze-session', async (req, res) => {
       return res.status(400).json({ error: 'No typing results to analyze' });
     }
 
-    const model = getGeminiModel();
-
-    // Prepare detailed analysis data
-    const resultsText = session.typingResults.map(item => 
-      `Word: "${item.word}", Typed: "${item.input}", Correct: ${item.correct}`
-    ).join('\n');
-
-    const prompt = `You are an expert in dyslexia and learning disabilities. Analyze this typing session data from a dyslexic child:
-
-${resultsText}
-
-Provide a detailed analysis in JSON format with these exact fields:
-{
-  "problematicLetters": ["array", "of", "letters"],
-  "confusionPatterns": [{"confuses": "b", "with": "d"}],
-  "strengths": ["array", "of", "strengths"],
-  "overallAccuracy": 85,
-  "recommendations": ["specific", "recommendations"],
-  "severity": "mild"
-}
-
-Guidelines:
-- problematicLetters: Letters consistently confused or missed
-- confusionPatterns: Specific letter pair confusions (b/d, p/q, etc.)
-- strengths: What the child does well
-- overallAccuracy: Percentage 0-100
-- recommendations: Specific practice suggestions for therapist
-- severity: "mild", "moderate", or "severe"
-
-Return ONLY valid JSON, no markdown, no code blocks, no explanations.`;
-
-    const result = await model.generateContent(prompt);
-    let analysisText = result.response.text().trim();
-    
-    // Remove markdown code blocks if present
-    analysisText = analysisText.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    
-    const analysis = JSON.parse(analysisText);
-
-    // Store analysis in session
+    const analysis = analyzeResultsLocally(session.typingResults);
     session.typingAnalysis = {
       ...analysis,
       analyzedAt: new Date(),
@@ -575,10 +594,7 @@ Return ONLY valid JSON, no markdown, no code blocks, no explanations.`;
 
     console.log('Analysis completed for session:', sessionId);
 
-    res.json({ 
-      success: true, 
-      analysis: session.typingAnalysis 
-    });
+    res.json({ success: true, analysis: session.typingAnalysis });
   } catch (error) {
     console.error('Error analyzing typing session:', error);
     res.status(500).json({ 
@@ -616,13 +632,22 @@ app.get('/api/typing/child-analysis', async (req, res) => {
       if (session.typingResults && session.typingResults.length > 0) {
         allTypingResults.push(...session.typingResults);
         
-        if (session.typingAnalysis) {
-          sessionAnalyses.push({
-            sessionId: session.sessionId,
-            analysis: session.typingAnalysis,
-            date: session.typingAnalysis.analyzedAt || session.date
-          });
+      // Ensure analysis exists; compute on the fly if missing
+      let analysisForSession = session.typingAnalysis;
+      if (!analysisForSession) {
+        try {
+          analysisForSession = analyzeResultsLocally(session.typingResults);
+        } catch (e) {
+          analysisForSession = null;
         }
+      }
+      if (analysisForSession) {
+        sessionAnalyses.push({
+          sessionId: session.sessionId,
+          analysis: analysisForSession,
+          date: (analysisForSession.analyzedAt) || session.date
+        });
+      }
       }
     });
 
@@ -694,51 +719,21 @@ app.post('/api/save-typing-results', async (req, res) => {
       session.typingResultsMap[r.word] = r.input;
     });
 
-    await therapist.save();
-
-    // Trigger automatic analysis if enough data (10+ words) and not already analyzed
+    // Always compute local analysis after saving results so therapist dashboard has data
     let autoAnalysis = null;
-    if (session.typingResults.length >= 10 && !session.typingAnalysis) {
-      try {
-        console.log('Auto-analyzing session with', session.typingResults.length, 'words');
-        
-        const model = getGeminiModel();
-        const resultsText = session.typingResults.map(item => 
-          `Word: "${item.word}", Typed: "${item.input}", Correct: ${item.correct}`
-        ).join('\n');
-
-        const prompt = `Analyze this typing session from a dyslexic child and return ONLY valid JSON:
-
-${resultsText}
-
-Return this exact structure:
-{
-  "problematicLetters": [],
-  "confusionPatterns": [],
-  "strengths": [],
-  "overallAccuracy": 0,
-  "recommendations": [],
-  "severity": "mild"
-}`;
-
-        const result = await model.generateContent(prompt);
-        let analysisText = result.response.text().trim()
-          .replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        
-        autoAnalysis = JSON.parse(analysisText);
-        
-        session.typingAnalysis = {
-          ...autoAnalysis,
-          analyzedAt: new Date(),
-          totalWords: session.typingResults.length,
-          correctWords: session.typingResults.filter(r => r.correct).length
-        };
-        
-        await therapist.save();
-        console.log('Auto-analysis completed successfully');
-      } catch (analysisError) {
-        console.error('Auto-analysis failed:', analysisError);
-      }
+    try {
+      console.log('Analyzing typing session (local) with', session.typingResults.length, 'words');
+      autoAnalysis = analyzeResultsLocally(session.typingResults);
+      session.typingAnalysis = {
+        ...autoAnalysis,
+        analyzedAt: new Date(),
+        totalWords: session.typingResults.length,
+        correctWords: session.typingResults.filter(r => r.correct).length
+      };
+      await therapist.save();
+      console.log('Typing analysis (local) saved successfully');
+    } catch (analysisError) {
+      console.error('Typing analysis failed:', analysisError);
     }
 
     res.json({ 

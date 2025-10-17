@@ -100,10 +100,13 @@ const ReadingExercise: React.FC = () => {
         
         const result = await response.json();
         if (result.success) {
+          alert('Recording saved successfully!');
           // on success navigate back to landing
-          navigate('/landing');
+          try { sessionStorage.setItem('skipAutoNav', '1'); } catch (e) {}
+          navigate('/');
         } else {
           console.error('Failed to save recording:', result.error);
+          alert('Failed to save recording. Please try again.');
         }
       } catch (err) {
         console.error('Failed to save recording', err);
@@ -138,7 +141,7 @@ const ReadingExercise: React.FC = () => {
           {!recording && <ActionButton onClick={startRecording}>Start Recording</ActionButton>}
           {recording && <ActionButton onClick={stopRecording}>Stop Recording</ActionButton>}
           {audioUrl && <ActionButton onClick={saveRecording}>Save Recording</ActionButton>}
-          <CancelButton onClick={() => navigate('/landing')}>Cancel</CancelButton>
+          <CancelButton onClick={() => navigate('/')}>Cancel</CancelButton>
         </Controls>
       </Card>
     </Container>
@@ -146,10 +149,36 @@ const ReadingExercise: React.FC = () => {
 };
 
 const Container = styled.div`
-  display:flex; align-items:center; justify-content:center; min-height:100vh; padding:2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 2rem;
+  background: url('/images/waves-flowers-bg.jpg') no-repeat center center fixed;
+  background-size: cover;
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.2);
+    z-index: 0;
+  }
 `;
 const Card = styled.div`
-  width:100%; max-width:800px; background:white; padding:2rem; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.08);
+  width: 100%;
+  max-width: 800px;
+  background: rgba(255, 255, 255, 0.98);
+  padding: 2rem;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(10px);
 `;
 const ContentBox = styled.div`
   max-height: 400px; overflow:auto; background:#fafafa; padding:12px; border-radius:8px; margin:12px 0;

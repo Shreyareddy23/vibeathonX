@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
 
-const TOTAL_WORDS = 5; // Total words to practice
+const TOTAL_WORDS = 10; // Total words to practice
 
 const TypingGame: React.FC = () => {
   const [currentWord, setCurrentWord] = useState('');
@@ -172,7 +172,7 @@ const TypingGame: React.FC = () => {
         }
         
         setTimeout(() => {
-          navigate('/landing');
+          navigate('/');
         }, 2000);
       } else {
         setMessage(data.error || 'Failed to save results');
@@ -191,7 +191,7 @@ const TypingGame: React.FC = () => {
       <Container>
         <Card>
           <LoadingSpinner>🔄</LoadingSpinner>
-          <LoadingText>Generating your first word...</LoadingText>
+          <LoadingText>Preparing your first word...</LoadingText>
         </Card>
       </Container>
     );
@@ -224,14 +224,14 @@ const TypingGame: React.FC = () => {
               console.error('Failed to save on close', err);
             } finally {
               setSavingOnClose(false);
-              navigate('/landing');
+              navigate('/');
             }
           }}
         >
           ×
         </CloseButton>
         <Header>
-          <Title>🎯 AI Typing Practice</Title>
+          <Title>🎯 Typing Practice</Title>
           <Subtitle>Type the word exactly as shown</Subtitle>
         </Header>
 
@@ -245,7 +245,7 @@ const TypingGame: React.FC = () => {
         {isGeneratingWord ? (
           <WordBox>
             <LoadingSpinner>🔄</LoadingSpinner>
-            <SmallLoadingText>Generating next word...</SmallLoadingText>
+            <SmallLoadingText>Loading next word...</SmallLoadingText>
           </WordBox>
         ) : (
           <>
@@ -297,7 +297,7 @@ const TypingGame: React.FC = () => {
         )}
 
         <InfoBox>
-          💡 The AI adapts to your typing patterns and helps identify which letters you might be confusing!
+          💡 This exercise focuses on letters commonly confusing for dyslexic students (b, d, p, e, i, l). Your results are analyzed to help your therapist.
         </InfoBox>
       </Card>
     </Container>

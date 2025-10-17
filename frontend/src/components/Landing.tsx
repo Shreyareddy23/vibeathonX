@@ -25,21 +25,40 @@ const Landing: React.FC = () => {
     try {
       const data = JSON.parse(storedData);
       setChildData(data);
-      // fetch latest preferences from server (in case therapist changed them)
+      // fetch latest preferences from server and navigate accordingly
+      const skipAuto = sessionStorage.getItem('skipAutoNav') === '1';
+      if (skipAuto) {
+        try { sessionStorage.removeItem('skipAutoNav'); } catch (e) {}
+      }
       (async () => {
         try {
           const resp = await fetch('http://localhost:5000/api/get-child-preference?therapistCode=' + encodeURIComponent(data.therapistCode) + '&username=' + encodeURIComponent(data.username));
           const d = await resp.json();
           if (resp.ok && d.success) {
-            setChildData(prev => {
-              const updated = { 
-                ...(prev as any), 
-                preferredStory: d.preferredStory || null,
-                preferredGame: d.preferredGame || null 
-              };
-              try { sessionStorage.setItem('childData', JSON.stringify(updated)); } catch (e) { }
-              return updated;
-            });
+            const updated = { 
+              ...data, 
+              preferredStory: d.preferredStory || null,
+              preferredGame: d.preferredGame || null 
+            };
+            try { 
+              sessionStorage.setItem('childData', JSON.stringify(updated));
+              setChildData(updated);
+              // Automatic navigation based on game preference
+              if (!skipAuto && d.preferredGame === 'puzzles' && updated.assignedThemes?.length) {
+                navigate(`/game/${updated.assignedThemes[0]}/1`, {
+                  state: { 
+                    assignedThemes: updated.assignedThemes,
+                    username: updated.username,
+                    therapistCode: updated.therapistCode 
+                  }
+                });
+              } else if (!skipAuto && d.preferredGame === 'typing') {
+                navigate('/typing-game');
+              } else if (!skipAuto && d.preferredGame === 'reading') {
+                navigate('/reading-exercise');
+              }
+            } catch (e) { }
+            setChildData(updated);
           }
         } catch (err) {
           console.error('Failed to fetch child preference', err);
@@ -66,19 +85,17 @@ const Landing: React.FC = () => {
   };
 
   const handlePlayTyping = () => {
-    try {
-      console.log('Starting typing game — navigating to /typing-game');
-      navigate('/typing-game');
-      // small fallback in case SPA navigation fails in the environment
-      setTimeout(() => {
-        if (window.location.pathname !== '/typing-game') {
-          console.warn('SPA navigate did not change location — falling back to full redirect');
-          window.location.href = '/typing-game';
+    if (childData?.assignedThemes?.length) {
+      navigate('/game', {
+        state: {
+          gameType: 'typing',
+          assignedThemes: childData.assignedThemes,
+          username: childData.username,
+          therapistCode: childData.therapistCode
         }
-      }, 200);
-    } catch (err) {
-      console.error('Navigate error, falling back to full redirect', err);
-      window.location.href = '/typing-game';
+      });
+    } else {
+      setError('No games have been assigned to you yet. Please ask your therapist to assign some games.');
     }
   };
 
@@ -102,8 +119,31 @@ const Landing: React.FC = () => {
           <ErrorMessage>{error}</ErrorMessage>
         ) : (
           <>
-            {/* If there's a preferred story, show reading exercise regardless of game preference */}
-            {childData.preferredStory ? (
+            {childData.preferredGame === 'typing' ? (
+              <>
+                <GameInfo>Typing game selected for you by your therapist.</GameInfo>
+                <Instructions>
+                  <InstructionTitle>⌨️ Typing Game</InstructionTitle>
+                  <InstructionList>
+                    <li>Practice your typing skills with fun exercises.</li>
+                    <li>Type the words that appear on the screen.</li>
+                  </InstructionList>
+                </Instructions>
+                <PlayButton onClick={handlePlayTyping}>Start Typing Game</PlayButton>
+              </>
+            ) : childData.preferredGame === 'puzzles' ? (
+              <>
+                <GameInfo>Picture puzzle selected for you by your therapist.</GameInfo>
+                <Instructions>
+                  <InstructionTitle>🧩 Picture Puzzle</InstructionTitle>
+                  <InstructionList>
+                    <li>Solve fun picture puzzles based on your assigned themes.</li>
+                    <li>Learn and have fun with pictures and words.</li>
+                  </InstructionList>
+                </Instructions>
+                <PlayButton onClick={handlePlayPuzzles}>Start Picture Puzzle</PlayButton>
+              </>
+            ) : childData.preferredGame === 'reading' ? (
               <>
                 <GameInfo>Reading exercise selected for you by your therapist.</GameInfo>
                 <Instructions>
