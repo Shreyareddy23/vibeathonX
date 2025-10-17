@@ -37,13 +37,14 @@ const Login: React.FC = () => {
             sessionStorage.setItem('therapistCode', data.code);
             navigate('/dashboard');
           } else if (data.role === 'child') {
-            // Child login - include preferredGame from server if present
+            // Child login - include preferredGame and preferredStory from server if present
             sessionStorage.setItem('childData', JSON.stringify({
               username: data.username,
               therapistCode: data.therapistCode,
               assignedThemes: data.assignedThemes || [],
               sessionId: data.sessionId,
               preferredGame: data.preferredGame || null,
+              preferredStory: data.preferredStory || null,
             }));
             // Always send child to landing first; landing shows the Start button for the selected game
             navigate('/landing');

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import { useToast } from './ToastContext';
 import { PieChart, Pie, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // Types/interfaces
@@ -50,12 +51,38 @@ const TherapistDashboard: React.FC = () => {
   const [deleteConfirmChild, setDeleteConfirmChild] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [selectedGame, setSelectedGame] = useState<'typing' | 'puzzles'>('typing');
-  const [childGameSelection, setChildGameSelection] = useState<Record<string, 'typing' | 'puzzles' | null>>({});
+  const [childGameSelection, setChildGameSelection] = useState<Record<string, 'typing' | 'puzzles' | 'reading' | null>>({});
+  const [showStoriesModal, setShowStoriesModal] = useState(false);
+  const [showRecordingsModal, setShowRecordingsModal] = useState(false);
+  const [stories, setStories] = useState<Array<{ _id: string; title: string; author?: string; story?: string; moral?: string }>>([]);
+  const [recordings, setRecordings] = useState<Array<{ 
+    sessionId: string; 
+    date: string; 
+    recordings: Array<{
+      storyId: string;
+      storyTitle: string;
+      recordedAt: string;
+      audioData: string;
+    }>;
+  }>>([]);
+  const [storyLoading, setStoryLoading] = useState(false);
+  const [recordingsLoading, setRecordingsLoading] = useState(false);
+  const [previewStory, setPreviewStory] = useState<{ _id: string; title: string; author?: string; story?: string; moral?: string } | null>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [showTypingModal, setShowTypingModal] = useState(false);
   const [typingResultsLoading, setTypingResultsLoading] = useState(false);
   const [typingResultsData, setTypingResultsData] = useState<Array<{ sessionId: string; date: string; typingResultsMap?: Record<string,string> }>>([]);
+
+
   const navigate = useNavigate();
+  const toast = (() => {
+    try {
+      // safe: attempt to use hook; if not inside provider this will throw
+      return useToast();
+    } catch (e) {
+      return { showToast: (_: string) => {} } as any;
+    }
+  })();
 
   // Set background and get therapist data
   useEffect(() => {
@@ -109,7 +136,61 @@ const TherapistDashboard: React.FC = () => {
     }
   };
 
-  // Add child
+  const fetchStories = async () => {
+    setStoryLoading(true);
+    try {
+      const resp = await fetch('http://localhost:5000/api/stories');
+      const data = await resp.json();
+      if (resp.ok && data.success) setStories(data.stories || []);
+      else setStories([]);
+    } catch (err) {
+      console.error('Failed to fetch stories', err);
+      setStories([]);
+    } finally {
+      setStoryLoading(false);
+    }
+  };
+
+  const fetchRecordings = async (childUsername: string) => {
+    setRecordingsLoading(true);
+    try {
+      const resp = await fetch(`http://localhost:5000/api/get-reading-recordings?therapistCode=${encodeURIComponent(therapistCode)}&username=${encodeURIComponent(childUsername)}`);
+      if (!resp.ok) {
+        console.error('Failed to fetch recordings:', await resp.text());
+        setRecordings([]);
+        return;
+      }
+      const data = await resp.json();
+      setRecordings(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch recordings', err);
+      setRecordings([]);
+    } finally {
+      setRecordingsLoading(false);
+    }
+  };
+
+  const savePreferredStory = async (childUsername: string, storyId: string) => {
+    try {
+      await fetch('http://localhost:5000/api/set-preferred-story', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ therapistCode, username: childUsername, storyId })
+      });
+      // refresh data so UI shows saved story
+      await fetchTherapistData(therapistUsername);
+      // Update local game selection state
+      setChildGameSelection(prev => ({
+        ...prev,
+        [childUsername]: 'reading'
+      }));
+      // Store in session for immediate UI update
+      sessionStorage.setItem(`selectedGame_${childUsername}`, 'reading');
+      setShowStoriesModal(false);
+      toast.showToast(`Saved story for ${childUsername}`);
+    } catch (err) {
+      console.error('Failed to save preferred story', err);
+    }
+  };  // Add child
   const handleAddChild = async () => {
     if (!newChildUsername.trim()) {
       setError('Enter a child username');
@@ -481,13 +562,28 @@ const TherapistDashboard: React.FC = () => {
                           active={childGameSelection[child.username] === 'puzzles'}
                           onClick={(e) => {
                             e.stopPropagation();
-                            const mapping = { ...childGameSelection, [child.username]: 'puzzles' } as Record<string, 'typing' | 'puzzles' | null>;
+                            const mapping = { ...childGameSelection, [child.username]: 'puzzles' } as Record<string, 'typing' | 'puzzles' | 'reading' | null>;
                             setChildGameSelection(mapping);
                             // don't persist yet; wait for Save
                             sessionStorage.setItem(`selectedGame_${child.username}`, 'puzzles');
                           }}
                         >
                           Puzzles
+                        </SmallGameButton>
+                        <SmallGameButton
+                          active={childGameSelection[child.username] === 'reading'}
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const mapping = { ...childGameSelection, [child.username]: 'reading' } as Record<string, 'typing' | 'puzzles' | 'reading' | null>;
+                            setChildGameSelection(mapping);
+                            sessionStorage.setItem(`selectedGame_${child.username}`, 'reading');
+                            // set selected child and fetch stories using helper
+                            setSelectedChild(child);
+                            setShowStoriesModal(true);
+                            fetchStories();
+                          }}
+                        >
+                          Reading
                         </SmallGameButton>
                       </div>
                     </div>
@@ -502,20 +598,16 @@ const TherapistDashboard: React.FC = () => {
                               method: 'POST', headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ therapistCode: therapistCode, username: child.username, preferredGame: choice })
                             });
-                            // persist locally for child's login logic
-                            if (choice) {
+                            // For typing: only persist to backend. Child will see the game when they login.
+                            if (choice === 'puzzles') {
+                              // persist locally for immediate puzzles flow
                               sessionStorage.setItem('selectedGame', choice);
                               sessionStorage.setItem('selectedGame_for', child.username);
-                            }
-                            // redirect based on choice
-                            if (choice === 'typing') {
-                              navigate('/typing-game');
-                            } else if (choice === 'puzzles') {
-                              // go to theme assignment for puzzles
                               sessionStorage.setItem('selectedChild', child.username);
                               sessionStorage.setItem('selectedChildTherapistCode', therapistCode);
                               navigate('/theme-assignment');
                             }
+                            // If typing selected, do not navigate or set sessionStorage here.
                           } catch (err) {
                             console.error('Failed to save preferred game', err);
                           }
@@ -573,6 +665,32 @@ const TherapistDashboard: React.FC = () => {
                       >
                         View All Sessions Emotions
                       </ActionButton>
+                    </>
+                  ) : childGameSelection[child.username] === 'reading' ? (
+                    <>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        <ActionButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedChild(child);
+                            setShowStoriesModal(true);
+                            fetchStories();
+                          }}
+                        >
+                          Select Story
+                        </ActionButton>
+                        <ActionButton
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedChild(child);
+                            setShowRecordingsModal(true);
+                            fetchRecordings(child.username);
+                          }}
+                          style={{ backgroundColor: '#4a67cc' }}
+                        >
+                          Session Recordings
+                        </ActionButton>
+                      </div>
                     </>
                   ) : childGameSelection[child.username] === 'typing' ? (
                     <>
@@ -862,7 +980,275 @@ const TherapistDashboard: React.FC = () => {
         </ConfirmationOverlay>
       )}
 
+      {/* Recordings Modal */}
+      {showRecordingsModal && (
+        <TypingModalOverlay>
+          <TypingModal>
+            <ModalCloseButton onClick={() => setShowRecordingsModal(false)}>×</ModalCloseButton>
+            <ModalTitle>Session Recordings for {selectedChild?.username}</ModalTitle>
+            {recordingsLoading ? (
+              <div>Loading recordings...</div>
+            ) : recordings.length === 0 ? (
+              <div style={{ color: '#666' }}>No recordings found.</div>
+            ) : (
+              <div style={{ maxHeight: 420, overflow: 'auto' }}>
+                <TypingResultsList>
+                  {recordings.map((session) => (
+                    <TypingSessionItem key={session.sessionId}>
+                      <SessionLabel>
+                        Session from {new Date(session.date).toLocaleDateString()}
+                      </SessionLabel>
+                      <KVList>
+                        {session.recordings.map((recording, index) => (
+                          <div key={index} style={{ marginBottom: '10px', padding: '10px', border: '1px solid #eef2f7', borderRadius: '4px' }}>
+                            <KVRow>
+                              <KVKey>Story:</KVKey>
+                              <KVVal>{recording.storyTitle}</KVVal>
+                            </KVRow>
+                            <KVRow>
+                              <KVKey>Recorded:</KVKey>
+                              <KVVal>{new Date(recording.recordedAt).toLocaleString()}</KVVal>
+                            </KVRow>
+                            <div style={{ marginTop: '10px' }}>
+                              <audio controls style={{ width: '100%' }}>
+                                <source src={`data:audio/wav;base64,${recording.audioData}`} type="audio/wav" />
+                                Your browser does not support the audio element.
+                              </audio>
+                            </div>
+                          </div>
+                        ))}
+                      </KVList>
+                    </TypingSessionItem>
+                  ))}
+                </TypingResultsList>
+              </div>
+            )}
+          </TypingModal>
+        </TypingModalOverlay>
+      )}
+
+      {/* Stories modal */}
+      {showStoriesModal && (
+        <TypingModalOverlay>
+          <TypingModal>
+            <ModalCloseButton onClick={() => setShowStoriesModal(false)}>×</ModalCloseButton>
+            <ModalTitle>Select a Story {selectedChild ? `for ${selectedChild.username}` : ''}</ModalTitle>
+            {storyLoading ? (
+              <div>Loading stories...</div>
+            ) : (
+              <div>
+                {stories.length === 0 ? (
+                  <div style={{ color: '#666' }}>No stories found</div>
+                ) : (
+                  <div style={{ display: 'flex', gap: 18 }}>
+                    <div style={{ flex: 1, maxHeight: 420, overflow: 'auto' }}>
+                      <TypingResultsList>
+                        {stories.map(s => (
+                          <TypingSessionItem key={s._id} onClick={() => setPreviewStory(s)} style={{ cursor: 'pointer' }}>
+                            <SessionLabel>
+                              {s.title}
+                              <small style={{ color: '#888', marginLeft: 8 }}>
+                                {s.author && s.author.toString().trim() && s.author.toString().trim().toLowerCase() !== 'unknown' ? `by ${s.author}` : ''}
+                              </small>
+                            </SessionLabel>
+                            <KVList style={{ marginTop: 8 }}>
+                              <div style={{ fontSize: '15px', color: '#333', marginBottom: 8 }}>
+                                <strong>Story:</strong>
+                                <div style={{ marginTop: 4, color: '#555' }}>
+                                  {s.story ? (s.story.length > 200 ? s.story.slice(0, 200) + '...' : s.story) : 'No story available'}
+                                </div>
+                              </div>
+                              <div style={{ fontSize: '15px', color: '#333' }}>
+                                <strong>Moral:</strong>
+                                <div style={{ marginTop: 4, color: '#555' }}>
+                                  {s.moral || 'No moral available'}
+                                </div>
+                              </div>
+                            </KVList>
+                            <div style={{ marginTop: 10, display: 'flex', gap: 8 }}>
+                              <Button onClick={(e) => { e.stopPropagation(); savePreferredStory((selectedChild && selectedChild.username) || '', s._id); }} disabled={!selectedChild}>Save for {selectedChild ? selectedChild.username : 'selected child'}</Button>
+                              <Button onClick={(e) => { e.stopPropagation(); navigator.clipboard?.writeText(s.story || ''); }}>Copy story</Button>
+                              <Button onClick={(e) => { e.stopPropagation(); setPreviewStory(s); }}>Preview</Button>
+                            </div>
+                          </TypingSessionItem>
+                        ))}
+                      </TypingResultsList>
+                    </div>
+
+                    <div style={{ flex: 1, maxHeight: 420, overflow: 'auto', padding: 12, borderLeft: '1px solid #eee', background: '#fafcff', borderRadius: 8 }}>
+                      {previewStory ? (
+                        <div>
+                          <h4 style={{ margin: '0 0 12px 0' }}>{previewStory.title}</h4>
+                          {previewStory.author && previewStory.author.toString().trim() && previewStory.author.toString().trim().toLowerCase() !== 'unknown' ? (
+                            <div style={{ color: '#888', marginBottom: 12 }}>by {previewStory.author}</div>
+                          ) : null}
+                          
+                          <div style={{ marginBottom: 20 }}>
+                            <h5 style={{ margin: '0 0 8px 0', color: '#444' }}>Story:</h5>
+                            {previewStory.story ? (
+                              <div style={{ lineHeight: 1.6, color: '#333' }}>{previewStory.story}</div>
+                            ) : (
+                              <div style={{ color: '#666' }}>No story available</div>
+                            )}
+                          </div>
+
+                          <div>
+                            <h5 style={{ margin: '0 0 8px 0', color: '#444' }}>Moral:</h5>
+                            {previewStory.moral ? (
+                              <div style={{ lineHeight: 1.6, color: '#333' }}>{previewStory.moral}</div>
+                            ) : (
+                              <div style={{ color: '#666' }}>No moral available</div>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ color: '#666' }}>Select a story to see its full content here</div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </TypingModal>
+        </TypingModalOverlay>
+      )}
+
+      {/* Recordings Modal */}
+      {showRecordingsModal && (
+        <TypingModalOverlay>
+          <TypingModal>
+            <ModalCloseButton onClick={() => setShowRecordingsModal(false)}>×</ModalCloseButton>
+            <ModalTitle>Session Recordings for {selectedChild?.username}</ModalTitle>
+            {recordings.length === 0 ? (
+              <div style={{ color: '#666' }}>No recordings found.</div>
+            ) : (
+              <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                {recordings.map((session) => (
+                  <TypingSessionItem key={session.sessionId} style={{ marginBottom: '20px' }}>
+                    <SessionLabel>Session: {new Date(session.date).toLocaleDateString()}</SessionLabel>
+                    <KVList>
+                      {session.recordings.map((recording, index) => (
+                        <TypingSessionItem key={index} style={{ marginBottom: '10px', background: '#fff' }}>
+                          <KVRow>
+                            <KVKey>Story:</KVKey>
+                            <KVVal>{recording.storyTitle}</KVVal>
+                          </KVRow>
+                          <KVRow>
+                            <KVKey>Recorded:</KVKey>
+                            <KVVal>{new Date(recording.recordedAt).toLocaleString()}</KVVal>
+                          </KVRow>
+                          <div style={{ marginTop: '10px' }}>
+                            <audio controls style={{ width: '100%' }}>
+                              <source src={`data:audio/wav;base64,${recording.audioData}`} type="audio/wav" />
+                              Your browser does not support the audio element.
+                            </audio>
+                          </div>
+                        </TypingSessionItem>
+                      ))}
+                    </KVList>
+                  </TypingSessionItem>
+                ))}
+              </div>
+            )}
+          </TypingModal>
+        </TypingModalOverlay>
+      )}
+
+      {previewStory && (
+        <TypingModalOverlay>
+          <TypingModal>
+            <ModalCloseButton onClick={() => setPreviewStory(null)}>×</ModalCloseButton>
+            <ModalTitle>
+              {previewStory.title}{' '}
+              {previewStory.author && previewStory.author.toString().trim() && previewStory.author.toString().trim().toLowerCase() !== 'unknown' ? (
+                <small style={{ color: '#888', marginLeft: 8 }}>by {previewStory.author}</small>
+              ) : null}
+            </ModalTitle>
+            <div style={{ maxHeight: 420, overflow: 'auto', padding: 8 }}>
+              <div style={{ marginBottom: 20 }}>
+                <h5 style={{ margin: '0 0 8px 0', color: '#444' }}>Story:</h5>
+                {previewStory.story ? (
+                  <div style={{ lineHeight: 1.6, color: '#333' }}>{previewStory.story}</div>
+                ) : (
+                  <div style={{ color: '#666' }}>No story available</div>
+                )}
+              </div>
+
+              <div>
+                <h5 style={{ margin: '0 0 8px 0', color: '#444' }}>Moral:</h5>
+                {previewStory.moral ? (
+                  <div style={{ lineHeight: 1.6, color: '#333' }}>{previewStory.moral}</div>
+                ) : (
+                  <div style={{ color: '#666' }}>No moral available</div>
+                )}
+              </div>
+            </div>
+            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+              <Button onClick={() => { if (selectedChild) savePreferredStory(selectedChild.username, previewStory._id); }}>Save for {selectedChild ? selectedChild.username : 'selected child'}</Button>
+              <Button onClick={() => setPreviewStory(null)}>Close</Button>
+            </div>
+          </TypingModal>
+        </TypingModalOverlay>
+      )}
+
       {/* Typing Results Modal */}
+      {/* Reading Recordings Modal */}
+      {showRecordingsModal && (
+        <TypingModalOverlay>
+          <TypingModal>
+            <ModalCloseButton onClick={() => setShowRecordingsModal(false)}>×</ModalCloseButton>
+            <ModalTitle>Reading Recordings for {selectedChild?.username}</ModalTitle>
+            {recordingsLoading ? (
+              <div>Loading recordings...</div>
+            ) : (
+              <div style={{ maxHeight: '70vh', overflow: 'auto' }}>
+                {recordings.length === 0 ? (
+                  <div style={{ color: '#666' }}>No recordings found</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                    {recordings.map(session => (
+                      <div key={session.sessionId} style={{ 
+                        background: '#f8f9fa', 
+                        padding: '15px', 
+                        borderRadius: '8px',
+                        border: '1px solid #e9ecef' 
+                      }}>
+                        <h4 style={{ marginBottom: '10px' }}>
+                          Session: {new Date(session.date).toLocaleDateString()} {new Date(session.date).toLocaleTimeString()}
+                        </h4>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {session.recordings.map((recording, idx) => (
+                            <div key={idx} style={{ 
+                              background: 'white', 
+                              padding: '10px', 
+                              borderRadius: '6px',
+                              border: '1px solid #dee2e6'
+                            }}>
+                              <div style={{ marginBottom: '8px' }}>
+                                <strong>Story:</strong> {recording.storyTitle}
+                                <br />
+                                <small style={{ color: '#666' }}>
+                                  Recorded: {new Date(recording.recordedAt).toLocaleString()}
+                                </small>
+                              </div>
+                              <audio 
+                                controls 
+                                src={`data:audio/webm;base64,${recording.audioData}`}
+                                style={{ width: '100%' }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </TypingModal>
+        </TypingModalOverlay>
+      )}
+
       {showTypingModal && (
         <TypingModalOverlay>
           <TypingModal>

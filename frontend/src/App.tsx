@@ -10,6 +10,8 @@ import Home from './components/Home';
 import Game from './components/Game';
 import ThemeAssignment from './components/ThemeAssignment';
 import TypingGame from './components/TypingGame';
+import ReadingExercise from './components/ReadingExercise';
+import { ToastProvider } from './components/ToastContext';
 import About from './components/About';
 import FAQ from './components/FAQ';
 import Feedback from './components/Feedback';
@@ -23,6 +25,7 @@ const App: React.FC = () => {
 
   return (
     <AppContainer>
+      <ToastProvider>
       <Router>
         <Routes>
           {/* Public Routes */}
@@ -36,6 +39,7 @@ const App: React.FC = () => {
           {/* Game Route */}
           <Route path="/game/:theme/:level" element={<Game />} />
           <Route path="/typing-game" element={<TypingGame />} />
+          <Route path="/reading-exercise" element={<ReadingExercise />} />
           
           {/* Therapist Protected Routes */}
           <Route path="/dashboard" element={<TherapistDashboard />} />
@@ -62,6 +66,7 @@ const App: React.FC = () => {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Router>
+      </ToastProvider>
     </AppContainer>
   );
 };

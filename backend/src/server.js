@@ -16,7 +16,9 @@ const generateNumericCode = customAlphabet('0123456789', 6);
 
 // Enable CORS for all routes
 app.use(cors());
-app.use(bodyParser.json());
+// Increase payload size limit for audio files (50MB)
+app.use(bodyParser.json({limit: '50mb'}));
+app.use(bodyParser.urlencoded({limit: '50mb', extended: true}));
 
 // Test endpoint
 app.get('/api/test', (req, res) => {
@@ -26,7 +28,7 @@ app.get('/api/test', (req, res) => {
 });
 
 // MongoDB connection (use 127.0.0.1 for compatibility)
-mongoose.connect(process.env.MONGO_URI, {
+mongoose.connect("mongodb://localhost:27017/joyverse", {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
@@ -79,12 +81,15 @@ const therapistSchema = new mongoose.Schema({
               ],
               typingResultsMap: { type: Object, default: {} },
               preferredGame: { type: String, default: null },
+              preferredStory: { type: String, default: null },
+              readingRecordings: { type: Array, default: [] },
         },
       ],
       currentAssignedThemes: { type: [String], default: [] },
       assignedThemes: { type: [String], default: [] },
       playedPuzzles: { type: [String], default: [] },
       preferredGame: { type: String, default: null },
+      preferredStory: { type: String, default: null },
     },
   ],
 });
@@ -129,6 +134,16 @@ const wordListSchema = new mongoose.Schema({
 });
 
 const WordList = mongoose.model('WordList', wordListSchema);
+
+// Story Schema
+const storySchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  author: { type: String, default: 'Unknown' },
+  story: { type: String, required: true },
+  moral: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
+});
+const Story = mongoose.model('Story', storySchema);
 
 // Generate unique 6-digit therapist code
 const generateUniqueCode = async () => {
@@ -301,6 +316,7 @@ app.post('/api/login', async (req, res) => {
           themesChanged: [],
           emotionsOfChild: [],
           playedPuzzles: [],
+          preferredStory: child.preferredStory || null,
         });
 
         await therapistWithChild.save();
@@ -312,6 +328,7 @@ app.post('/api/login', async (req, res) => {
           therapistCode: therapistWithChild.code,
           assignedThemes: child.currentAssignedThemes || [],
           preferredGame: child.preferredGame || null,
+          preferredStory: child.preferredStory || null,
           sessionId,
         });
       }
@@ -382,7 +399,7 @@ app.post('/api/set-preferred-game', async (req, res) => {
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Initialize Gemini AI (place after other initializations, around line 15)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const genAI = new GoogleGenerativeAI("AIzaSyBqyTaqtqroFrAWYmc8txnZX3fFyoYh-14");
 
 // Helper function to get Gemini model
 function getGeminiModel() {
@@ -815,6 +832,7 @@ app.post('/api/child-login', async (req, res) => {
       typingResults: [],
       typingResultsMap: {},
       preferredGame: therapist.children[childIndex].preferredGame || null,
+      preferredStory: therapist.children[childIndex].preferredStory || null,
     });
 
     await therapist.save();
@@ -824,6 +842,8 @@ app.post('/api/child-login', async (req, res) => {
       username: childName,
       sessionId,
       assignedThemes: therapist.children[childIndex].currentAssignedThemes || therapist.children[childIndex].assignedThemes || []
+      ,
+      preferredStory: therapist.children[childIndex].preferredStory || null,
     });
   } catch (error) {
     res.status(500).json({ message: 'Internal server error' });
@@ -1361,4 +1381,140 @@ app.post('/api/migrate-sessions', async (req, res) => {
 // Start the server
 app.listen(port, () => {
   console.log(`Server running on port ${port}`);
+});
+
+// Get stories list
+app.get('/api/stories', async (req, res) => {
+  try {
+    const stories = await Story.find().sort({ createdAt: -1 }).limit(100);
+    res.json({ success: true, stories });
+  } catch (err) {
+    console.error('Error fetching stories', err);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
+// Get a story by ID
+app.get('/api/stories/:id', async (req, res) => {
+  try {
+    const story = await Story.findById(req.params.id);
+    if (!story) {
+      return res.status(404).json({ success: false, message: 'Story not found' });
+    }
+    res.json({ success: true, story });
+  } catch (err) {
+    console.error('Error fetching story', err);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+});
+
+// Set preferred story for a child
+app.post('/api/set-preferred-story', async (req, res) => {
+  try {
+    const { therapistCode, username, storyId } = req.body;
+    if (!therapistCode || !username || !storyId) return res.status(400).json({ error: 'Missing fields' });
+
+    await Therapist.updateOne(
+      { code: therapistCode, 'children.username': username },
+      { 
+        $set: { 
+          'children.$.preferredStory': storyId,
+          'children.$.preferredGame': 'reading'
+        } 
+      }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error setting preferred story', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Save reading audio (base64 or URL) to session recordings
+app.post('/api/save-reading-audio', async (req, res) => {
+  try {
+    const { therapistCode, username, sessionId, storyId, audioData } = req.body;
+    if (!therapistCode || !username || !sessionId || !storyId || !audioData) return res.status(400).json({ error: 'Missing fields' });
+
+    const therapist = await Therapist.findOne({ code: therapistCode, 'children.username': username, 'children.sessions.sessionId': sessionId });
+    if (!therapist) return res.status(404).json({ error: 'Not found' });
+
+    const childIndex = therapist.children.findIndex(c => c.username === username);
+    const sessionIndex = therapist.children[childIndex].sessions.findIndex(s => s.sessionId === sessionId);
+    if (sessionIndex === -1) return res.status(404).json({ error: 'Session not found' });
+
+    // Find the story title first
+    const story = await Story.findById(storyId);
+    if (!story) return res.status(404).json({ error: 'Story not found' });
+
+    const session = therapist.children[childIndex].sessions[sessionIndex];
+    session.readingRecordings = session.readingRecordings || [];
+    session.readingRecordings.push({ 
+      storyId, 
+      storyTitle: story.title,
+      audioData, 
+      recordedAt: new Date() 
+    });
+
+    await therapist.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Error saving reading audio', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Get child's preferredGame and preferredStory
+// Get child's reading recordings
+app.get('/api/get-reading-recordings', async (req, res) => {
+  try {
+    const { therapistCode, username } = req.query;
+    if (!therapistCode || !username) return res.status(400).json({ success: false, error: 'Missing params' });
+
+    const therapist = await Therapist.findOne({ code: therapistCode })
+      .populate('children.sessions.readingRecordings.storyId'); // Populate story details
+    if (!therapist) return res.status(404).json({ success: false, error: 'Therapist not found' });
+
+    const child = therapist.children.find(c => c.username === String(username));
+    if (!child) return res.status(404).json({ success: false, error: 'Child not found' });
+
+    // Get all sessions with recordings
+    const sessionsWithRecordings = child.sessions
+      .filter(s => s.readingRecordings && s.readingRecordings.length > 0)
+      .map(s => ({
+        sessionId: s.sessionId,
+        date: s.date,
+        recordings: s.readingRecordings.map(r => ({
+          storyId: r.storyId,
+          storyTitle: r.storyTitle || r.storyId?.title || 'Unknown Story',
+          recordedAt: r.recordedAt,
+          audioData: r.audioData
+        }))
+      }))
+      // Sort sessions by date, newest first
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    res.json(sessionsWithRecordings);
+  } catch (err) {
+    console.error('Error fetching reading recordings', err);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+app.get('/api/get-child-preference', async (req, res) => {
+  try {
+    const { therapistCode, username } = req.query;
+    if (!therapistCode || !username) return res.status(400).json({ success: false, error: 'Missing params' });
+
+    const therapist = await Therapist.findOne({ code: therapistCode });
+    if (!therapist) return res.status(404).json({ success: false, error: 'Therapist not found' });
+
+    const child = therapist.children.find(c => c.username === String(username));
+    if (!child) return res.status(404).json({ success: false, error: 'Child not found' });
+
+    res.json({ success: true, preferredGame: child.preferredGame || null, preferredStory: child.preferredStory || null });
+  } catch (err) {
+    console.error('Error fetching child preference', err);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
 });

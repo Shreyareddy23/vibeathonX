@@ -7,6 +7,7 @@ interface ChildData {
   assignedThemes: string[];
   therapistCode: string;
   preferredGame?: string | null;
+  preferredStory?: string | null;
 }
 
 const Landing: React.FC = () => {
@@ -24,6 +25,26 @@ const Landing: React.FC = () => {
     try {
       const data = JSON.parse(storedData);
       setChildData(data);
+      // fetch latest preferences from server (in case therapist changed them)
+      (async () => {
+        try {
+          const resp = await fetch('http://localhost:5000/api/get-child-preference?therapistCode=' + encodeURIComponent(data.therapistCode) + '&username=' + encodeURIComponent(data.username));
+          const d = await resp.json();
+          if (resp.ok && d.success) {
+            setChildData(prev => {
+              const updated = { 
+                ...(prev as any), 
+                preferredStory: d.preferredStory || null,
+                preferredGame: d.preferredGame || null 
+              };
+              try { sessionStorage.setItem('childData', JSON.stringify(updated)); } catch (e) { }
+              return updated;
+            });
+          }
+        } catch (err) {
+          console.error('Failed to fetch child preference', err);
+        }
+      })();
     } catch (err) {
       console.error('Error parsing child data:', err);
       navigate('/child-login');
@@ -81,34 +102,18 @@ const Landing: React.FC = () => {
           <ErrorMessage>{error}</ErrorMessage>
         ) : (
           <>
-            {/* Show only the allowed game based on child's preferredGame */}
-            {childData.preferredGame === 'typing' ? (
+            {/* If there's a preferred story, show reading exercise regardless of game preference */}
+            {childData.preferredStory ? (
               <>
-                <GameInfo>Typing game selected for you by your therapist.</GameInfo>
+                <GameInfo>Reading exercise selected for you by your therapist.</GameInfo>
                 <Instructions>
-                  <InstructionTitle>✍️ Typing Task</InstructionTitle>
+                  <InstructionTitle>📚 Reading Exercise</InstructionTitle>
                   <InstructionList>
-                    <li>Type the word shown in the box as accurately as you can.</li>
-                    <li>There are 5 words to type.</li>
+                    <li>Your therapist picked a story for you to read.</li>
+                    <li>Read the story aloud and your voice will be recorded.</li>
                   </InstructionList>
                 </Instructions>
-                <PlayButton onClick={handlePlayTyping}>Start Typing Game</PlayButton>
-              </>
-            ) : childData.preferredGame === 'puzzles' ? (
-              <>
-                <GameInfo>
-                  You have {childData.assignedThemes.length} game theme{childData.assignedThemes.length !== 1 ? 's' : ''} to play!
-                </GameInfo>
-                <Instructions>
-                  <InstructionTitle>🎮 How to Play 🎮</InstructionTitle>
-                  <InstructionList>
-                    <li>Look at the picture to find the word.</li>
-                    <li>Tap letters in order to spell it!</li>
-                    <li>Words can go across or up and down.</li>
-                    <li>❌ Spelled it wrong? You can tap again to choose new letters!</li>
-                  </InstructionList>
-                </Instructions>
-                <PlayButton onClick={handlePlayPuzzles}>Let's Play! <span role="img" aria-label="rocket">🚀</span></PlayButton>
+                <PlayButton onClick={() => navigate('/reading-exercise')}>Start Reading Exercise</PlayButton>
               </>
             ) : (
               <>

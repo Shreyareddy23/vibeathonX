@@ -19,6 +19,7 @@ const TypingGame: React.FC = () => {
     problematicLetters: string[];
     confusionPatterns: Array<{ confuses: string; with: string }>;
   } | null>(null);
+  const [savingOnClose, setSavingOnClose] = useState(false);
 
   useEffect(() => {
     const stored = sessionStorage.getItem('childData');
@@ -199,6 +200,36 @@ const TypingGame: React.FC = () => {
   return (
     <Container>
       <Card>
+        <CloseButton
+          title="Exit and save"
+          aria-label="Exit and save"
+          onClick={async () => {
+            // If there are results, save them, otherwise just go home
+            if (savingOnClose) return;
+            setSavingOnClose(true);
+            try {
+              if (results && results.length > 0 && childData) {
+                await fetch('http://localhost:5000/api/save-typing-results', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    therapistCode: childData.therapistCode,
+                    username: childData.username,
+                    sessionId: childData.sessionId,
+                    results
+                  })
+                });
+              }
+            } catch (err) {
+              console.error('Failed to save on close', err);
+            } finally {
+              setSavingOnClose(false);
+              navigate('/landing');
+            }
+          }}
+        >
+          ×
+        </CloseButton>
         <Header>
           <Title>🎯 AI Typing Practice</Title>
           <Subtitle>Type the word exactly as shown</Subtitle>
@@ -291,6 +322,7 @@ const Card = styled.div`
   width: 100%;
   max-width: 520px;
   text-align: center;
+  position: relative;
 `;
 
 const Header = styled.div`
@@ -509,6 +541,27 @@ const InfoBox = styled.div`
   font-size: 13px;
   margin-top: 20px;
   line-height: 1.5;
+`;
+
+const CloseButton = styled.button`
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  background: #ff6b6b;
+  color: white;
+  border: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+
+  &:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(0,0,0,0.14); }
 `;
 
 export default TypingGame;
